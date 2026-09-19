@@ -88,6 +88,7 @@ services:
             MAX_LIFETIME_MS: "1800000"
             MAX_SESSIONS: "200"
             PORT: "3000"
+        mem_limit: 1g
         networks:
             - piston-net
         healthcheck:

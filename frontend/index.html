@@ -481,6 +481,7 @@ const DEFAULT_CODE = {
     python: `# Python — type runs live in the terminal below\nname = input("What is your name? ")\nprint(f"Hello, {name}!")`,
     python2: `# Python 2\nprint "Hello, World!"`,
     javascript: `// JavaScript\nconsole.log("Hello, World!");`,
+    node:       `// Node.js\nconsole.log("Hello, World!");`,
     typescript: `// TypeScript\nconst message: string = "Hello, World!";\nconsole.log(message);`,
     java: `import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        System.out.print("Enter your name: ");\n        String name = sc.nextLine();\n        System.out.println("Hello, " + name + "!");\n    }\n}`,
     'c++': `#include <iostream>\n#include <string>\n\nint main() {\n    std::string name;\n    std::cout << "Enter your name: ";\n    std::getline(std::cin, name);\n    std::cout << "Hello, " << name << "!" << std::endl;\n    return 0;\n}`,
@@ -947,11 +948,13 @@ function seedShell() {
     if (!shellWs || !shellReady || shellWs.readyState !== WebSocket.OPEN) return;
     const lang = document.getElementById('lang-select').value;
     if (!SHELL_LANGS.has(lang)) return;
-    shellWs.send(JSON.stringify({
-        type:     'seed',
-        filename: shellFilename(),
-        content:  editor ? editor.getValue() : '',
-    }));
+    try {
+        shellWs.send(JSON.stringify({
+            type:     'seed',
+            filename: shellFilename(),
+            content:  editor ? editor.getValue() : '',
+        }));
+    } catch(_) {}
 }
 
 let shellTerm      = null;
@@ -1007,7 +1010,7 @@ function initShell() {
 
     shellTerm.onData(data => {
         if (shellWs && shellWs.readyState === WebSocket.OPEN && shellReady) {
-            shellWs.send(JSON.stringify({ type: 'input', data }));
+            try { shellWs.send(JSON.stringify({ type: 'input', data })); } catch(_) {}
         }
     });
 
@@ -1073,7 +1076,7 @@ function connectShell() {
     ws.onerror = () => {
         shellReady = false;
         shellTerm.write('\x1b[31m[WebSocket error — is the terminal service running?]\x1b[0m\r\n');
-        shellWs = null;
+        if (shellWs === ws) shellWs = null;
     };
 }
 

@@ -103,8 +103,11 @@ class Session {
 
     write(data) {
         if (this.dead || !this._pty) return;
+        if (typeof data !== 'string' || data.length === 0) return;
+        // Cap single write to 16 KB — normal terminal input never exceeds this
+        const chunk = data.length > 16384 ? data.slice(0, 16384) : data;
         this.lastInput = Date.now();
-        this._pty.write(data);
+        this._pty.write(chunk);
     }
 
     resize(cols, rows) {
