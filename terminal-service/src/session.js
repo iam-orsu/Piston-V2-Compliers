@@ -55,9 +55,10 @@ class Session {
             // CPU: 0.5 vCPU max — fair share across students
             '--cpus', '0.5',
 
-            // ulimits: belt-and-suspenders on processes + file descriptors
+            // ulimits: belt-and-suspenders on processes, file descriptors, and CPU time
             '--ulimit', 'nproc=100:100',
             '--ulimit', 'nofile=256:256',
+            '--ulimit', 'cpu=60:60',    // kill any process after 60 CPU seconds (infinite loops)
 
             // Capabilities: drop everything — bash needs none of them
             '--cap-drop', 'ALL',
