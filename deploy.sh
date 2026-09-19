@@ -212,20 +212,50 @@ cmd_start() {
         auto_install_runtimes
     fi
 
-    echo ""
-    echo -e "${GREEN}${BOLD}✅  Piston IDE is ready!${NC}"
-    echo ""
+    print_ready_banner
+}
 
+print_ready_banner() {
+    local ip
     if [[ "$PLATFORM" == "wsl2" ]]; then
-        echo -e "   ${BOLD}📝 Code Editor UI${NC}  →  ${CYAN}http://localhost:8080${NC}"
-        echo -e "   ${BOLD}🔌 Piston API${NC}      →  ${CYAN}http://localhost:2000${NC}"
+        ip="localhost"
     else
-        local ip
         ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
-        echo -e "   ${BOLD}📝 Code Editor UI${NC}  →  ${CYAN}http://${ip}:8080${NC}  (or http://localhost:8080)"
-        echo -e "   ${BOLD}🔌 Piston API${NC}      →  ${CYAN}http://${ip}:2000${NC}  (internal only — firewall recommended)"
+    fi
+
+    # Wait up to 15s for the frontend nginx to be reachable
+    local fe_ok=0
+    for _ in {1..15}; do
+        if curl -sf "http://localhost:8080" &>/dev/null; then
+            fe_ok=1; break
+        fi
+        sleep 1
+    done
+
+    echo ""
+    echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}${BOLD}║          PISTON IDE — DEPLOYMENT COMPLETE        ║${NC}"
+    echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "   ${BOLD}📝  Code Editor UI${NC}"
+    echo -e "       ${CYAN}${BOLD}http://${ip}:8080${NC}"
+    if [[ "$PLATFORM" != "wsl2" && "$ip" != "localhost" ]]; then
+        echo -e "       ${CYAN}(open this URL in your browser — not localhost)${NC}"
+    fi
+    echo ""
+    echo -e "   ${BOLD}🔌  Piston API (admin only)${NC}"
+    echo -e "       ${CYAN}http://${ip}:2000${NC}"
+    echo ""
+    $DC ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || $DC ps
+    echo ""
+    if [[ "$fe_ok" -eq 0 ]]; then
+        warn "Frontend did not respond on port 8080 — check: ./deploy.sh logs frontend"
+    else
+        echo -e "${GREEN}${BOLD}✅  All systems operational. Open the URL above in your browser.${NC}"
+    fi
+    if [[ "$PLATFORM" == "linux" ]]; then
         echo ""
-        echo -e "   ${YELLOW}🔒 Production tip: allow only UI port externally:${NC}"
+        echo -e "   ${YELLOW}🔒 Firewall tip:${NC}"
         echo -e "      sudo ufw allow 8080/tcp && sudo ufw deny 2000/tcp"
     fi
     echo ""
@@ -243,10 +273,7 @@ cmd_restart() {
     log "Rebuilding and restarting (applying changes)..."
     $DC up -d --build --remove-orphans
     wait_for_api
-    echo ""
-    echo -e "${GREEN}${BOLD}✅  Restarted!${NC}"
-    echo -e "   📝 Code Editor UI  →  ${CYAN}http://localhost:8080${NC}"
-    echo ""
+    print_ready_banner
 }
 
 cmd_status() {
