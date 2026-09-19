@@ -14,9 +14,10 @@ RUN apk add --no-cache \
     nano \
     python3 \
     gcc \
-    g++ \
     musl-dev \
     make \
+    nodejs \
+    openjdk21-jdk \
     git \
     diffutils \
     tree
