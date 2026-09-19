@@ -18,7 +18,6 @@ RUN apk add --no-cache \
     make \
     nodejs \
     openjdk21-jdk \
-    git \
     diffutils \
     tree
 

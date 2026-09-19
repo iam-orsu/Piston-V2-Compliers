@@ -39,7 +39,7 @@ class Session {
 
             // Filesystem: read-only image, two small tmpfs mounts
             '--read-only',
-            '--tmpfs', '/home/sandbox:rw,size=64m,uid=1000,gid=1000,mode=0700',
+            '--tmpfs', '/home/sandbox:rw,exec,size=64m,uid=1000,gid=1000,mode=0700',
             '--tmpfs', '/tmp:rw,size=32m,mode=1777',
 
             // Network: completely isolated — no internet, no host reach
