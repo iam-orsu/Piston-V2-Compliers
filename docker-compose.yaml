@@ -1,0 +1,34 @@
+version: '3.2'
+
+services:
+    api:
+        image: ghcr.io/engineer-man/piston
+        container_name: piston_api
+        restart: always
+        privileged: true
+        ports:
+            - "2000:2000"
+        volumes:
+            - ./data/piston/packages:/piston/packages
+        tmpfs:
+            - /tmp:exec
+        networks:
+            - piston-net
+
+    frontend:
+        build:
+            context: ./nginx
+        container_name: piston_frontend
+        restart: always
+        ports:
+            - "8080:80"
+        volumes:
+            - ./frontend:/usr/share/nginx/html:ro
+        depends_on:
+            - api
+        networks:
+            - piston-net
+
+networks:
+    piston-net:
+        driver: bridge
