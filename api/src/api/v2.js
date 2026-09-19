@@ -312,11 +312,11 @@ router.post('/packages', async (req, res) => {
     } catch (e) {
         logger.error(
             `Error while installing package ${pkg.language}-${pkg.version}:`,
-            e.message
+            e?.message ?? String(e)
         );
 
         return res.status(500).send({
-            message: e.message,
+            message: e?.message ?? String(e),
         });
     }
 });
@@ -341,11 +341,11 @@ router.delete('/packages', async (req, res) => {
     } catch (e) {
         logger.error(
             `Error while uninstalling package ${pkg.language}-${pkg.version}:`,
-            e.message
+            e?.message ?? String(e)
         );
 
         return res.status(500).send({
-            message: e.message,
+            message: e?.message ?? String(e),
         });
     }
 });

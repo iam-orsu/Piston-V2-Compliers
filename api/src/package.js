@@ -90,12 +90,15 @@ class Package {
         );
 
         await new Promise((resolve, reject) => {
+            // --touch prevents tar from calling utime(), which fails on WSL2
             const proc = cp.exec(
-                `bash -c 'cd "${this.install_path}" && tar xzf ${pkgpath}'`
+                `bash -c 'cd "${this.install_path}" && tar xzf ${pkgpath} --touch'`
             );
 
             proc.once('exit', (code, _) => {
-                code === 0 ? resolve() : reject();
+                code === 0
+                    ? resolve()
+                    : reject(new Error(`tar exited with code ${code}`));
             });
 
             proc.stdout.pipe(process.stdout);
@@ -122,7 +125,9 @@ class Package {
             );
 
             proc.once('exit', (code, _) => {
-                code === 0 ? resolve(stdout) : reject();
+                code === 0
+                    ? resolve(stdout)
+                    : reject(new Error(`env caching failed with code ${code}`));
             });
 
             proc.stdout.on('data', data => {

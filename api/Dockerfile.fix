@@ -1,0 +1,6 @@
+# Thin patch layer on top of the pre-built Piston image.
+# Overrides only the API source with our WSL2-compatible fixes:
+#   - tar --touch fix (prevents utime EPERM on WSL2)
+#   - safe error handling (e?.message instead of e.message)
+FROM ghcr.io/engineer-man/piston
+COPY src/ /piston_api/src/
