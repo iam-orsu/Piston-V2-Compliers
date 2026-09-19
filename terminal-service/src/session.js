@@ -20,6 +20,7 @@ class Session {
         this._pty          = null;
         this._maxTimer     = null;
         this._idleInterval = null;
+        this._seededFile   = null;  // last file written into sandbox home
     }
 
     async start() {
@@ -116,26 +117,33 @@ class Session {
         // Only allow safe filenames (e.g. main.py, Main.java, main.ts)
         if (!/^[a-zA-Z][a-zA-Z0-9_.\-]*$/.test(filename)) return;
         if (typeof content !== 'string' || content.length > 65536) return;
-        this._doSeed(filename, content, 5);
+        const prevFile = (this._seededFile !== filename) ? this._seededFile : null;
+        this._seededFile = filename;
+        this._doSeed(filename, content, prevFile, 5);
     }
 
-    _doSeed(filename, content, retriesLeft) {
+    _doSeed(filename, content, prevFile, retriesLeft) {
         if (this.dead || retriesLeft <= 0) return;
+        // Remove previous language's file first so sandbox home only ever has one file
+        const cmd = prevFile
+            ? `rm -f /home/sandbox/${prevFile} && cat > /home/sandbox/${filename}`
+            : `cat > /home/sandbox/${filename}`;
         const child = spawn('docker', [
             'exec', '-i', this.containerName,
-            'sh', '-c', `cat > /home/sandbox/${filename}`,
+            'sh', '-c', cmd,
         ]);
         child.stdin.write(content, 'utf8');
         child.stdin.end();
         child.on('exit', (code) => {
             if (code !== 0 && !this.dead) {
-                setTimeout(() => this._doSeed(filename, content, retriesLeft - 1), 400);
+                setTimeout(() => this._doSeed(filename, content, prevFile, retriesLeft - 1), 400);
             } else if (code === 0) {
-                console.log(`[session ${this.id}] seeded ${filename} (${content.length} bytes)`);
+                const cleaned = prevFile ? ` (removed ${prevFile})` : '';
+                console.log(`[session ${this.id}] seeded ${filename}${cleaned}`);
             }
         });
         child.on('error', () => {
-            if (!this.dead) setTimeout(() => this._doSeed(filename, content, retriesLeft - 1), 400);
+            if (!this.dead) setTimeout(() => this._doSeed(filename, content, prevFile, retriesLeft - 1), 400);
         });
     }
 
