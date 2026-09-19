@@ -191,6 +191,15 @@ auto_install_runtimes() {
 }
 
 # ── Commands ─────────────────────────────────────────────────────────────────
+build_sandbox_image() {
+    echo -e "${CYAN}${BOLD}🔒  Building hardened sandbox image...${NC}"
+    docker build -t piston-sandbox:latest "$SCRIPT_DIR/sandbox" \
+        --label "piston.role=sandbox" \
+        --quiet \
+    && echo -e "${GREEN}✅  piston-sandbox image ready.${NC}" \
+    || { warn "Sandbox image build failed — terminal shell tab will not work"; }
+}
+
 cmd_start() {
     banner
     check_docker
@@ -204,6 +213,8 @@ cmd_start() {
     else
         info "Linux mode: standard configuration"
     fi
+
+    build_sandbox_image
 
     log "Building and starting containers..."
     $DC up -d --build --remove-orphans
@@ -270,6 +281,7 @@ cmd_stop() {
 
 cmd_restart() {
     check_docker
+    build_sandbox_image
     log "Rebuilding and restarting (applying changes)..."
     $DC up -d --build --remove-orphans
     wait_for_api

@@ -74,6 +74,28 @@ services:
             PISTON_COMPILE_CPU_TIME: "30000"
             PISTON_OUTPUT_MAX_SIZE: "10240"
 
+    # ── Sandbox Terminal Service (node-pty + WebSocket → Docker) ─────────────
+    terminal-service:
+        build:
+            context: ./terminal-service
+        container_name: piston_terminal
+        restart: always
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+        environment:
+            SANDBOX_IMAGE: piston-sandbox:latest
+            IDLE_TIMEOUT_MS: "300000"
+            MAX_LIFETIME_MS: "1800000"
+            PORT: "3000"
+        networks:
+            - piston-net
+        healthcheck:
+            test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+            interval: 15s
+            timeout: 5s
+            retries: 3
+            start_period: 20s
+
     # ── Frontend (nginx load balancer + static files) ─────────────────────────
     frontend:
         build:
@@ -86,6 +108,8 @@ services:
             - ./frontend:/usr/share/nginx/html:ro
         depends_on:
             api1:
+                condition: service_healthy
+            terminal-service:
                 condition: service_healthy
         networks:
             - piston-net

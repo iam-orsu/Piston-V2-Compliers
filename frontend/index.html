@@ -282,6 +282,27 @@
         .stats-pane.active { display: block; }
         #xterm-container.hidden { display: none; }
 
+        /* Shell (sandbox terminal) pane */
+        #shell-container {
+            width: 100%;
+            height: 100%;
+            padding: 8px 4px 4px 8px;
+            display: none;
+        }
+        #shell-container.active { display: block; }
+        #shell-container .xterm { height: 100%; }
+        #shell-container .xterm-viewport { overflow-y: auto !important; }
+
+        .shell-badge {
+            font-size: 10px;
+            background: rgba(63,185,80,0.15);
+            border: 1px solid rgba(63,185,80,0.3);
+            color: var(--green);
+            padding: 1px 6px;
+            border-radius: 10px;
+            margin-left: 4px;
+        }
+
         .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .stat-card {
             background: var(--bg-1);
@@ -374,6 +395,7 @@
         <div class="terminal-titlebar">
             <button class="term-tab active" id="tab-terminal-btn">Terminal</button>
             <button class="term-tab" id="tab-stats-btn">Stats</button>
+            <button class="term-tab" id="tab-shell-btn">Shell <span class="shell-badge">sandbox</span></button>
             <div class="tab-spacer"></div>
             <button class="clear-btn" id="clear-btn" title="Clear terminal">Clear</button>
         </div>
@@ -382,6 +404,7 @@
             <div class="stats-pane" id="stats-pane">
                 <span class="stat-empty">Run code to see execution stats.</span>
             </div>
+            <div id="shell-container"></div>
         </div>
     </div>
 
@@ -893,6 +916,154 @@ document.getElementById('clear-btn').addEventListener('click', () => { termClear
 
 document.getElementById('tab-terminal-btn').addEventListener('click', () => showTab('terminal'));
 document.getElementById('tab-stats-btn').addEventListener('click', () => showTab('stats'));
+document.getElementById('tab-shell-btn').addEventListener('click', () => showTab('shell'));
+
+// ── Sandbox Shell (ws /terminal) ───────────────────────────────────────────
+
+let shellTerm      = null;
+let shellFitAddon  = null;
+let shellWs        = null;
+let shellReady     = false;
+
+function initShell() {
+    if (shellTerm) return; // already initialized
+
+    shellTerm = new Terminal({
+        theme: {
+            background: '#0a0f14',
+            foreground: '#c9d1d9',
+            cursor:     '#3fb950',
+            cursorAccent: '#0a0f14',
+            selection:  'rgba(63,185,80,0.25)',
+            black:   '#484f58', red:     '#f85149',
+            green:   '#3fb950', yellow:  '#d29922',
+            blue:    '#58a6ff', magenta: '#bc8cff',
+            cyan:    '#39c5cf', white:   '#c9d1d9',
+            brightBlack:   '#6e7681', brightRed:     '#ff7b72',
+            brightGreen:   '#56d364', brightYellow:  '#e3b341',
+            brightBlue:    '#79c0ff', brightMagenta: '#d2a8ff',
+            brightCyan:    '#56d4dd', brightWhite:   '#f0f6fc',
+        },
+        fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Menlo', monospace",
+        fontSize: 13,
+        lineHeight: 1.5,
+        cursorBlink: true,
+        cursorStyle: 'block',
+        scrollback: 5000,
+        convertEol: true,
+        disableStdin: false,
+        allowProposedApi: true,
+    });
+
+    shellFitAddon = new FitAddon.FitAddon();
+    shellTerm.loadAddon(shellFitAddon);
+    shellTerm.open(document.getElementById('shell-container'));
+    shellFitAddon.fit();
+
+    const ro = new ResizeObserver(() => {
+        try {
+            shellFitAddon.fit();
+            if (shellWs && shellWs.readyState === WebSocket.OPEN) {
+                const dims = shellFitAddon.proposeDimensions();
+                if (dims) shellWs.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
+            }
+        } catch(_) {}
+    });
+    ro.observe(document.getElementById('shell-container'));
+
+    shellTerm.onData(data => {
+        if (shellWs && shellWs.readyState === WebSocket.OPEN && shellReady) {
+            shellWs.send(JSON.stringify({ type: 'input', data }));
+        }
+    });
+
+    connectShell();
+}
+
+function connectShell() {
+    if (shellWs && shellWs.readyState === WebSocket.OPEN) return;
+    shellReady = false;
+
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${wsProto}//${location.host}/terminal`);
+    shellWs = ws;
+
+    shellTerm.write('\x1b[2m[Connecting to sandbox...]\x1b[0m\r\n');
+
+    ws.onmessage = (event) => {
+        let msg;
+        try { msg = JSON.parse(event.data); } catch(_) { return; }
+
+        switch (msg.type) {
+            case 'ready':
+                shellReady = true;
+                shellTerm.write('\x1b[2m[Sandbox ready — isolated Alpine Linux]\x1b[0m\r\n');
+                shellTerm.focus();
+                // Send initial terminal size
+                try {
+                    const dims = shellFitAddon.proposeDimensions();
+                    if (dims) ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
+                } catch(_) {}
+                break;
+            case 'output':
+                shellTerm.write(msg.data);
+                break;
+            case 'exit':
+                shellReady = false;
+                shellTerm.write('\r\n\x1b[2m[Shell exited — click Shell tab to reconnect]\x1b[0m\r\n');
+                break;
+            case 'killed':
+                shellReady = false;
+                const reasons = {
+                    idle_timeout:      'idle for 5 minutes',
+                    max_lifetime:      'max session time (30 min) reached',
+                    client_disconnect: 'disconnected',
+                };
+                shellTerm.write(`\r\n\x1b[33m[Session ended: ${reasons[msg.reason] || msg.reason}]\x1b[0m\r\n`);
+                shellWs = null;
+                break;
+            case 'error':
+                shellTerm.write(`\r\n\x1b[31m[Error: ${msg.message}]\x1b[0m\r\n`);
+                break;
+        }
+    };
+
+    ws.onclose = () => {
+        shellReady = false;
+        if (shellWs === ws) shellWs = null;
+    };
+
+    ws.onerror = () => {
+        shellReady = false;
+        shellTerm.write('\x1b[31m[WebSocket error — is the terminal service running?]\x1b[0m\r\n');
+        shellWs = null;
+    };
+}
+
+// Patch showTab to handle shell
+const _origShowTab = showTab;
+showTab = function(tab) {
+    const shellContainer = document.getElementById('shell-container');
+    const shellBtn       = document.getElementById('tab-shell-btn');
+
+    if (tab === 'shell') {
+        document.getElementById('xterm-container').classList.add('hidden');
+        document.getElementById('stats-pane').classList.remove('active');
+        document.getElementById('tab-terminal-btn').classList.remove('active');
+        document.getElementById('tab-stats-btn').classList.remove('active');
+        shellContainer.classList.add('active');
+        shellBtn.classList.add('active');
+        initShell();
+        try { shellFitAddon?.fit(); } catch(_) {}
+        shellTerm?.focus();
+        // Reconnect if disconnected
+        if (!shellWs || shellWs.readyState === WebSocket.CLOSED) connectShell();
+    } else {
+        shellContainer.classList.remove('active');
+        shellBtn.classList.remove('active');
+        _origShowTab(tab);
+    }
+};
 </script>
 </body>
 </html>
