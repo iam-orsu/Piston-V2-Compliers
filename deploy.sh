@@ -158,7 +158,7 @@ install_runtime() {
     fi
     echo -e "   ${YELLOW}⬇  Installing ${BOLD}${lang}${NC}${YELLOW}...${NC}"
     (cd "$SCRIPT_DIR/cli" && node index.js ppman install "$lang") 2>&1 | tail -3 || {
-        warn "Failed to install $lang — run './deploy.sh logs api' for details"
+        warn "Failed to install $lang — run './deploy.sh logs api1' for details"
     }
 }
 

@@ -429,6 +429,11 @@ const MONACO_LANG = {
     crystal:'ruby', lisp:'plaintext', prolog:'plaintext',
 };
 
+// Languages where the filename stem must not be 'main' (e.g. Java requires filename == class name)
+const FILE_STEM = {
+    java: 'Main',
+};
+
 const FILE_EXT = {
     python:'py', python2:'py',
     javascript:'js', typescript:'ts',
@@ -678,7 +683,9 @@ function onLangChange() {
     monaco.editor.setModelLanguage(editor.getModel(), MONACO_LANG[lang] || 'plaintext');
     editor.setValue(DEFAULT_CODE[lang] || `// ${lang}\n`);
     editor.setPosition({ lineNumber: 1, column: 1 });
-    document.getElementById('filename-label').textContent = `main.${FILE_EXT[lang] || 'txt'}`;
+    const stem = FILE_STEM[lang] || 'main';
+    const ext  = FILE_EXT[lang] || 'txt';
+    document.getElementById('filename-label').textContent = `${stem}.${ext}`;
     setStatus(`${lang} ${rt.version}`, 'Ready — Ctrl+Enter to run', 'default');
 }
 
@@ -693,7 +700,9 @@ async function runCode() {
     if (!rt || !editor) return;
 
     const code = editor.getValue();
+    const stem = FILE_STEM[lang] || 'main';
     const ext  = FILE_EXT[lang] || 'txt';
+    const fileName = `${stem}.${ext}`;
 
     setRunning(true);
     termClear();
@@ -716,7 +725,7 @@ async function runCode() {
                 type: 'init',
                 language: lang,
                 version: rt.version,
-                files: [{ name: `main.${ext}`, content: code }],
+                files: [{ name: fileName, content: code }],
                 args: [],
                 stdin: '',
             }));
@@ -786,6 +795,8 @@ async function runCode() {
         ws.onerror = () => {
             termWriteLn('\x1b[31m[WebSocket error — is the API running?]\x1b[0m');
             setStatus(lang, 'Connection error', 'error');
+            setRunning(false);
+            activeWs = null;
         };
 
     } catch (e) {
