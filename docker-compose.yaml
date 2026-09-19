@@ -1,26 +1,80 @@
+x-api-base: &api-base
+    build:
+        context: ./api
+        dockerfile: Dockerfile.fix
+    restart: always
+    privileged: true
+    volumes:
+        - piston-packages:/piston/packages
+    tmpfs:
+        - /tmp:exec
+    networks:
+        - piston-net
+    healthcheck:
+        test: ["CMD", "node", "-e", "require('http').get('http://localhost:2000/api/v2/runtimes', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+        interval: 15s
+        timeout: 5s
+        retries: 5
+        start_period: 30s
+
 services:
-    api:
-        build:
-            context: ./api
-            dockerfile: Dockerfile.fix
-        container_name: piston_api
-        restart: always
-        privileged: true
+    # ── Replica 1 (port 2000 exposed for CLI/admin) ──────────────────────────
+    api1:
+        <<: *api-base
+        container_name: piston_api_1
         ports:
             - "2000:2000"
-        volumes:
-            - piston-packages:/piston/packages
-        tmpfs:
-            - /tmp:exec
-        networks:
-            - piston-net
-        healthcheck:
-            test: ["CMD", "node", "-e", "require('http').get('http://localhost:2000/api/v2/runtimes', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
-            interval: 15s
-            timeout: 5s
-            retries: 5
-            start_period: 20s
+        environment:
+            PISTON_RUNNER_UID_MIN: "1001"
+            PISTON_RUNNER_UID_MAX: "1500"
+            PISTON_RUNNER_GID_MIN: "1001"
+            PISTON_RUNNER_GID_MAX: "1500"
+            PISTON_MAX_CONCURRENT_JOBS: "150"
+            PISTON_RUN_MEMORY_LIMIT: "268435456"
+            PISTON_COMPILE_MEMORY_LIMIT: "268435456"
+            PISTON_RUN_TIMEOUT: "15000"
+            PISTON_COMPILE_TIMEOUT: "30000"
+            PISTON_RUN_CPU_TIME: "15000"
+            PISTON_COMPILE_CPU_TIME: "30000"
+            PISTON_OUTPUT_MAX_SIZE: "10240"
 
+    # ── Replica 2 (internal only) ─────────────────────────────────────────────
+    api2:
+        <<: *api-base
+        container_name: piston_api_2
+        environment:
+            PISTON_RUNNER_UID_MIN: "1501"
+            PISTON_RUNNER_UID_MAX: "2000"
+            PISTON_RUNNER_GID_MIN: "1501"
+            PISTON_RUNNER_GID_MAX: "2000"
+            PISTON_MAX_CONCURRENT_JOBS: "150"
+            PISTON_RUN_MEMORY_LIMIT: "268435456"
+            PISTON_COMPILE_MEMORY_LIMIT: "268435456"
+            PISTON_RUN_TIMEOUT: "15000"
+            PISTON_COMPILE_TIMEOUT: "30000"
+            PISTON_RUN_CPU_TIME: "15000"
+            PISTON_COMPILE_CPU_TIME: "30000"
+            PISTON_OUTPUT_MAX_SIZE: "10240"
+
+    # ── Replica 3 (internal only) ─────────────────────────────────────────────
+    api3:
+        <<: *api-base
+        container_name: piston_api_3
+        environment:
+            PISTON_RUNNER_UID_MIN: "2001"
+            PISTON_RUNNER_UID_MAX: "2500"
+            PISTON_RUNNER_GID_MIN: "2001"
+            PISTON_RUNNER_GID_MAX: "2500"
+            PISTON_MAX_CONCURRENT_JOBS: "150"
+            PISTON_RUN_MEMORY_LIMIT: "268435456"
+            PISTON_COMPILE_MEMORY_LIMIT: "268435456"
+            PISTON_RUN_TIMEOUT: "15000"
+            PISTON_COMPILE_TIMEOUT: "30000"
+            PISTON_RUN_CPU_TIME: "15000"
+            PISTON_COMPILE_CPU_TIME: "30000"
+            PISTON_OUTPUT_MAX_SIZE: "10240"
+
+    # ── Frontend (nginx load balancer + static files) ─────────────────────────
     frontend:
         build:
             context: ./nginx
@@ -31,7 +85,7 @@ services:
         volumes:
             - ./frontend:/usr/share/nginx/html:ro
         depends_on:
-            api:
+            api1:
                 condition: service_healthy
         networks:
             - piston-net

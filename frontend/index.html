@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Piston IDE</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
     <style>
         :root {
             --bg-0: #0d1117;
@@ -59,8 +60,7 @@
         }
 
         .logo-icon {
-            width: 28px;
-            height: 28px;
+            width: 28px; height: 28px;
             background: linear-gradient(135deg, #58a6ff, #bc8cff);
             border-radius: 6px;
             display: flex;
@@ -73,7 +73,7 @@
 
         .controls { display: flex; align-items: center; gap: 8px; flex: 1; }
 
-        select, .pill-input {
+        select {
             background: var(--bg-2);
             border: 1px solid var(--border);
             color: var(--text);
@@ -83,11 +83,10 @@
             outline: none;
             transition: border-color 0.15s;
             cursor: pointer;
+            min-width: 140px;
         }
-        select:hover, .pill-input:hover { border-color: var(--accent); }
-        select:focus, .pill-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(88,166,255,0.15); }
-
-        #lang-select { min-width: 140px; }
+        select:hover { border-color: var(--accent); }
+        select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(88,166,255,0.15); }
 
         .version-badge {
             background: var(--bg-2);
@@ -117,7 +116,6 @@
             white-space: nowrap;
         }
         .icon-btn:hover { border-color: var(--accent); color: var(--text); }
-        .icon-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,0.08); }
 
         .run-btn {
             background: var(--green-dark);
@@ -140,6 +138,24 @@
         .run-btn.loading .run-icon { display: none; }
         .run-btn.loading .spinner { display: block; }
 
+        .kill-btn {
+            background: rgba(248,81,73,0.1);
+            border: 1px solid rgba(248,81,73,0.4);
+            color: var(--red);
+            padding: 7px 16px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.15s;
+            white-space: nowrap;
+        }
+        .kill-btn:hover { background: rgba(248,81,73,0.2); }
+        .kill-btn.visible { display: flex; }
+
         .spinner {
             width: 14px; height: 14px;
             border: 2px solid rgba(255,255,255,0.25);
@@ -149,38 +165,6 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* ── Stdin/Args Panel ── */
-        .input-panel {
-            background: var(--bg-1);
-            border-bottom: 1px solid var(--border);
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.25s ease, padding 0.25s ease;
-            flex-shrink: 0;
-        }
-        .input-panel.open { max-height: 130px; padding: 10px 16px; }
-
-        .input-panel-inner { display: flex; gap: 10px; align-items: flex-start; }
-
-        .input-group { display: flex; flex-direction: column; gap: 4px; flex: 1; }
-        .input-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
-
-        .input-panel textarea, .input-panel input {
-            background: var(--bg-2);
-            border: 1px solid var(--border);
-            color: var(--text);
-            padding: 7px 10px;
-            border-radius: var(--radius);
-            font-family: var(--mono);
-            font-size: 12px;
-            resize: none;
-            outline: none;
-            transition: border-color 0.15s;
-            width: 100%;
-        }
-        .input-panel textarea:focus, .input-panel input:focus { border-color: var(--accent); }
-        .input-panel textarea { height: 70px; }
-
         /* ── Main Layout ── */
         .main {
             display: flex;
@@ -188,7 +172,7 @@
             min-height: 0;
         }
 
-        /* ── Editor ── */
+        /* ── Editor Panel ── */
         .editor-panel {
             flex: 6;
             min-width: 0;
@@ -219,21 +203,20 @@
             border-bottom: 2px solid transparent;
         }
         .file-tab.active { color: var(--text); border-bottom-color: var(--accent); }
-
         .file-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 
         #editor { flex: 1; min-height: 0; }
 
-        /* ── Output Panel ── */
-        .output-panel {
+        /* ── Terminal Panel ── */
+        .terminal-panel {
             flex: 4;
             min-width: 0;
             display: flex;
             flex-direction: column;
-            background: var(--bg-0);
+            background: #0d1117;
         }
 
-        .output-titlebar {
+        .terminal-titlebar {
             background: var(--bg-1);
             border-bottom: 1px solid var(--border);
             height: 36px;
@@ -244,7 +227,7 @@
             flex-shrink: 0;
         }
 
-        .out-tab {
+        .term-tab {
             background: none;
             border: none;
             color: var(--text-dim);
@@ -254,77 +237,51 @@
             cursor: pointer;
             transition: all 0.15s;
         }
-        .out-tab:hover { background: var(--bg-2); color: var(--text); }
-        .out-tab.active { background: var(--bg-2); color: var(--text); }
+        .term-tab:hover { background: var(--bg-2); color: var(--text); }
+        .term-tab.active { background: var(--bg-2); color: var(--text); }
 
-        .out-tab .badge {
-            display: inline-block;
-            background: var(--red);
-            color: #fff;
-            font-size: 10px;
-            padding: 1px 5px;
-            border-radius: 8px;
-            margin-left: 4px;
-            display: none;
+        .tab-spacer { flex: 1; }
+
+        .clear-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 11px;
+            cursor: pointer;
+            padding: 3px 8px;
+            border-radius: 4px;
+            transition: all 0.15s;
         }
-        .out-tab .badge.show { display: inline-block; }
+        .clear-btn:hover { color: var(--text-dim); background: var(--bg-2); }
 
-        .output-body {
+        .terminal-body {
             flex: 1;
-            overflow-y: auto;
+            min-height: 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* xterm.js container — must fill the panel */
+        #xterm-container {
+            width: 100%;
+            height: 100%;
+            padding: 8px 4px 4px 8px;
+        }
+        #xterm-container .xterm { height: 100%; }
+        #xterm-container .xterm-viewport { overflow-y: auto !important; }
+
+        /* Stats pane (hidden by default) */
+        .stats-pane {
+            display: none;
             padding: 14px;
+            overflow-y: auto;
+            height: 100%;
             font-family: var(--mono);
             font-size: 13px;
-            line-height: 1.65;
         }
-        .output-body::-webkit-scrollbar { width: 6px; }
-        .output-body::-webkit-scrollbar-track { background: transparent; }
-        .output-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        .stats-pane.active { display: block; }
+        #xterm-container.hidden { display: none; }
 
-        .tab-pane { display: none; }
-        .tab-pane.active { display: block; }
-
-        /* Placeholder */
-        .placeholder {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            color: var(--text-muted);
-            text-align: center;
-            gap: 12px;
-            min-height: 200px;
-        }
-        .placeholder svg { opacity: 0.2; }
-        .placeholder p { font-size: 13px; font-family: var(--mono); }
-        .placeholder kbd {
-            background: var(--bg-2);
-            border: 1px solid var(--border);
-            border-radius: 3px;
-            padding: 1px 6px;
-            font-size: 11px;
-        }
-
-        /* Output text styles */
-        .out-stdout { color: var(--text); white-space: pre-wrap; word-break: break-all; }
-        .out-stderr { color: var(--red); white-space: pre-wrap; word-break: break-all; }
-        .out-compile-label { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; margin-top: 12px; }
-        .out-compile-label:first-child { margin-top: 0; }
-        .out-empty { color: var(--text-muted); font-style: italic; }
-
-        /* Error block */
-        .err-block {
-            background: rgba(248,81,73,0.08);
-            border: 1px solid rgba(248,81,73,0.25);
-            border-radius: var(--radius);
-            padding: 12px;
-            color: var(--red);
-            white-space: pre-wrap;
-            word-break: break-all;
-        }
-
-        /* Stats */
         .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .stat-card {
             background: var(--bg-1);
@@ -337,6 +294,7 @@
         .stat-val.ok { color: var(--green); }
         .stat-val.err { color: var(--red); }
         .stat-val.warn { color: var(--yellow); }
+        .stat-empty { color: var(--text-muted); font-size: 13px; }
         .stat-section-title { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 14px 0 8px; }
 
         /* ── Status Bar ── */
@@ -351,18 +309,19 @@
             transition: background 0.3s;
         }
         .statusbar.success { background: #1a7f37; }
-        .statusbar.error { background: #b62324; }
+        .statusbar.error   { background: #b62324; }
         .statusbar.running { background: #7c4dff; }
+        .statusbar.killed  { background: #6e340c; }
 
         .sb-item { font-size: 11px; color: rgba(255,255,255,0.9); display: flex; align-items: center; gap: 5px; }
-        .sb-sep { width: 1px; height: 12px; background: rgba(255,255,255,0.25); }
+        .sb-sep  { width: 1px; height: 12px; background: rgba(255,255,255,0.25); }
         .sb-spacer { flex: 1; }
 
         /* Responsive */
         @media (max-width: 700px) {
             .main { flex-direction: column; }
             .editor-panel { flex: 1; border-right: none; border-bottom: 1px solid var(--border); }
-            .output-panel { flex: 1; }
+            .terminal-panel { flex: 1; }
             .logo span { display: none; }
         }
     </style>
@@ -377,16 +336,14 @@
     </div>
     <div class="sep"></div>
     <div class="controls">
-        <select id="lang-select">
-            <option>Loading runtimes...</option>
-        </select>
+        <select id="lang-select"><option>Loading runtimes...</option></select>
         <span class="version-badge" id="version-badge">—</span>
         <div class="spacer"></div>
-        <button class="icon-btn" id="stdin-toggle">
-            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h8m-8 6h16"/>
+        <button class="kill-btn" id="kill-btn">
+            <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
             </svg>
-            stdin / args
+            Stop
         </button>
         <button class="run-btn" id="run-btn">
             <svg class="run-icon" width="13" height="13" fill="currentColor" viewBox="0 0 24 24">
@@ -397,20 +354,6 @@
         </button>
     </div>
 </header>
-
-<!-- Stdin / Args Panel -->
-<div class="input-panel" id="input-panel">
-    <div class="input-panel-inner">
-        <div class="input-group" style="flex:3">
-            <span class="input-label">stdin</span>
-            <textarea id="stdin-input" placeholder="Standard input passed to your program..."></textarea>
-        </div>
-        <div class="input-group" style="flex:1">
-            <span class="input-label">args (space-separated)</span>
-            <input type="text" id="args-input" placeholder="arg1 arg2 arg3">
-        </div>
-    </div>
-</div>
 
 <!-- Main Split -->
 <div class="main">
@@ -426,36 +369,18 @@
         <div id="editor"></div>
     </div>
 
-    <!-- Output Panel -->
-    <div class="output-panel">
-        <div class="output-titlebar">
-            <button class="out-tab active" data-tab="output">Output</button>
-            <button class="out-tab" data-tab="stdout">
-                Stdout <span class="badge" id="badge-stdout"></span>
-            </button>
-            <button class="out-tab" data-tab="stderr">
-                Stderr <span class="badge" id="badge-stderr"></span>
-            </button>
-            <button class="out-tab" data-tab="stats">Stats</button>
+    <!-- Terminal Panel -->
+    <div class="terminal-panel">
+        <div class="terminal-titlebar">
+            <button class="term-tab active" id="tab-terminal-btn">Terminal</button>
+            <button class="term-tab" id="tab-stats-btn">Stats</button>
+            <div class="tab-spacer"></div>
+            <button class="clear-btn" id="clear-btn" title="Clear terminal">Clear</button>
         </div>
-        <div class="output-body">
-            <div class="tab-pane active" id="tab-output">
-                <div class="placeholder" id="placeholder">
-                    <svg width="44" height="44" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                    </svg>
-                    <p>Press <kbd>▶ Run</kbd> or <kbd>Ctrl+Enter</kbd> to execute your code</p>
-                </div>
-                <div id="output-content"></div>
-            </div>
-            <div class="tab-pane" id="tab-stdout">
-                <div id="stdout-content" class="out-empty">No output yet.</div>
-            </div>
-            <div class="tab-pane" id="tab-stderr">
-                <div id="stderr-content" class="out-empty">No stderr yet.</div>
-            </div>
-            <div class="tab-pane" id="tab-stats">
-                <div id="stats-content" class="out-empty">Run code to see execution stats.</div>
+        <div class="terminal-body">
+            <div id="xterm-container"></div>
+            <div class="stats-pane" id="stats-pane">
+                <span class="stat-empty">Run code to see execution stats.</span>
             </div>
         </div>
     </div>
@@ -468,150 +393,189 @@
     <span class="sb-sep"></span>
     <span class="sb-item" id="sb-msg">Ready — Ctrl+Enter to run</span>
     <span class="sb-spacer"></span>
-    <span class="sb-item">v2 API</span>
+    <span class="sb-item">Interactive Terminal</span>
 </div>
 
-<!-- Monaco Loader -->
+<!-- xterm.js -->
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+<!-- Monaco -->
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
+
 <script>
 'use strict';
 
 // ── Language maps ──────────────────────────────────────────────────────────
 
 const MONACO_LANG = {
-    python: 'python', python2: 'python',
-    javascript: 'javascript', typescript: 'typescript',
-    java: 'java',
-    c: 'c', 'c++': 'cpp', cpp: 'cpp',
-    csharp: 'csharp', 'csharp.net': 'csharp',
-    'fsharp.net': 'fsharp', fsi: 'fsharp',
-    go: 'go',
-    rust: 'rust',
-    ruby: 'ruby',
-    php: 'php',
-    kotlin: 'kotlin',
-    swift: 'swift',
-    scala: 'scala',
-    haskell: 'haskell',
-    lua: 'lua',
-    perl: 'perl',
-    r: 'r', rscript: 'r',
-    bash: 'shell', sh: 'shell', dash: 'shell',
-    powershell: 'powershell',
-    dart: 'dart',
-    julia: 'julia',
-    groovy: 'java',
-    clojure: 'clojure',
-    elixir: 'elixir',
-    erlang: 'plaintext',
-    ocaml: 'plaintext',
-    pascal: 'pascal',
-    cobol: 'plaintext',
-    fortran: 'plaintext',
-    nim: 'plaintext',
-    sqlite3: 'sql',
-    brainfuck: 'plaintext',
-    nasm: 'plaintext', nasm64: 'plaintext',
-    zig: 'plaintext',
-    vlang: 'plaintext',
-    coffeescript: 'coffee',
-    crystal: 'ruby',
-    lisp: 'plaintext',
-    prolog: 'plaintext',
+    python:'python', python2:'python',
+    javascript:'javascript', typescript:'typescript',
+    java:'java',
+    c:'c', 'c++':'cpp', cpp:'cpp',
+    csharp:'csharp', 'csharp.net':'csharp',
+    'fsharp.net':'fsharp', fsi:'fsharp',
+    go:'go', rust:'rust', ruby:'ruby', php:'php',
+    kotlin:'kotlin', swift:'swift', scala:'scala',
+    haskell:'haskell', lua:'lua', perl:'perl',
+    r:'r', rscript:'r',
+    bash:'shell', sh:'shell', dash:'shell',
+    powershell:'powershell', dart:'dart', julia:'julia',
+    groovy:'java', clojure:'clojure', elixir:'elixir',
+    erlang:'plaintext', ocaml:'plaintext', pascal:'pascal',
+    cobol:'plaintext', fortran:'plaintext', nim:'plaintext',
+    sqlite3:'sql', brainfuck:'plaintext',
+    nasm:'plaintext', nasm64:'plaintext', zig:'plaintext',
+    vlang:'plaintext', coffeescript:'coffee',
+    crystal:'ruby', lisp:'plaintext', prolog:'plaintext',
 };
 
 const FILE_EXT = {
-    python: 'py', python2: 'py',
-    javascript: 'js', typescript: 'ts',
-    java: 'java',
-    c: 'c', 'c++': 'cpp', cpp: 'cpp',
-    csharp: 'cs', 'csharp.net': 'cs',
-    'fsharp.net': 'fs', fsi: 'fsx',
-    go: 'go',
-    rust: 'rs',
-    ruby: 'rb',
-    php: 'php',
-    kotlin: 'kt',
-    swift: 'swift',
-    scala: 'scala',
-    haskell: 'hs',
-    lua: 'lua',
-    perl: 'pl',
-    r: 'r', rscript: 'r',
-    bash: 'sh', sh: 'sh', dash: 'sh',
-    powershell: 'ps1',
-    dart: 'dart',
-    julia: 'jl',
-    groovy: 'groovy',
-    clojure: 'clj',
-    elixir: 'ex',
-    erlang: 'erl',
-    ocaml: 'ml',
-    pascal: 'pas',
-    nim: 'nim',
-    sqlite3: 'sql',
-    brainfuck: 'bf',
-    nasm: 'asm', nasm64: 'asm',
-    zig: 'zig',
-    vlang: 'v',
-    coffeescript: 'coffee',
-    crystal: 'cr',
-    lisp: 'lisp',
-    prolog: 'pl',
-    cobol: 'cob',
-    fortran: 'f90',
+    python:'py', python2:'py',
+    javascript:'js', typescript:'ts',
+    java:'java', c:'c', 'c++':'cpp', cpp:'cpp',
+    csharp:'cs', 'csharp.net':'cs',
+    'fsharp.net':'fs', fsi:'fsx',
+    go:'go', rust:'rs', ruby:'rb', php:'php',
+    kotlin:'kt', swift:'swift', scala:'scala',
+    haskell:'hs', lua:'lua', perl:'pl',
+    r:'r', rscript:'r',
+    bash:'sh', sh:'sh', dash:'sh',
+    powershell:'ps1', dart:'dart', julia:'jl',
+    groovy:'groovy', clojure:'clj', elixir:'ex',
+    erlang:'erl', ocaml:'ml', pascal:'pas',
+    nim:'nim', sqlite3:'sql', brainfuck:'bf',
+    nasm:'asm', nasm64:'asm', zig:'zig', vlang:'v',
+    coffeescript:'coffee', crystal:'cr', lisp:'lisp',
+    prolog:'pl', cobol:'cob', fortran:'f90',
 };
 
 const DEFAULT_CODE = {
-    python: `# Python\nprint("Hello, World!")`,
+    python: `# Python — type runs live in the terminal below\nname = input("What is your name? ")\nprint(f"Hello, {name}!")`,
     python2: `# Python 2\nprint "Hello, World!"`,
     javascript: `// JavaScript\nconsole.log("Hello, World!");`,
     typescript: `// TypeScript\nconst message: string = "Hello, World!";\nconsole.log(message);`,
-    java: `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}`,
-    'c++': `#include <iostream>\n\nint main() {\n    std::cout << "Hello, World!" << std::endl;\n    return 0;\n}`,
-    c: `#include <stdio.h>\n\nint main() {\n    printf("Hello, World!\\n");\n    return 0;\n}`,
-    csharp: `using System;\n\nclass Program {\n    static void Main() {\n        Console.WriteLine("Hello, World!");\n    }\n}`,
-    'csharp.net': `using System;\n\nclass Program {\n    static void Main() {\n        Console.WriteLine("Hello, World!");\n    }\n}`,
-    go: `package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello, World!")\n}`,
-    rust: `fn main() {\n    println!("Hello, World!");\n}`,
-    ruby: `puts "Hello, World!"`,
-    php: `<?php\necho "Hello, World!\\n";`,
-    kotlin: `fun main() {\n    println("Hello, World!")\n}`,
-    swift: `print("Hello, World!")`,
+    java: `import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        System.out.print("Enter your name: ");\n        String name = sc.nextLine();\n        System.out.println("Hello, " + name + "!");\n    }\n}`,
+    'c++': `#include <iostream>\n#include <string>\n\nint main() {\n    std::string name;\n    std::cout << "Enter your name: ";\n    std::getline(std::cin, name);\n    std::cout << "Hello, " << name << "!" << std::endl;\n    return 0;\n}`,
+    c: `#include <stdio.h>\n\nint main() {\n    char name[100];\n    printf("Enter your name: ");\n    scanf("%s", name);\n    printf("Hello, %s!\\n", name);\n    return 0;\n}`,
+    csharp: `using System;\n\nclass Program {\n    static void Main() {\n        Console.Write("Enter your name: ");\n        string name = Console.ReadLine();\n        Console.WriteLine($"Hello, {name}!");\n    }\n}`,
+    'csharp.net': `using System;\n\nclass Program {\n    static void Main() {\n        Console.Write("Enter your name: ");\n        string name = Console.ReadLine();\n        Console.WriteLine($"Hello, {name}!");\n    }\n}`,
+    go: `package main\n\nimport (\n    "bufio"\n    "fmt"\n    "os"\n)\n\nfunc main() {\n    reader := bufio.NewReader(os.Stdin)\n    fmt.Print("Enter your name: ")\n    name, _ := reader.ReadString('\\n')\n    fmt.Printf("Hello, %s!", name)\n}`,
+    rust: `use std::io;\n\nfn main() {\n    println!("Enter your name:");\n    let mut name = String::new();\n    io::stdin().read_line(&mut name).unwrap();\n    println!("Hello, {}!", name.trim());\n}`,
+    ruby: `print "Enter your name: "\nname = gets.chomp\nputs "Hello, #{name}!"`,
+    php: `<?php\necho "Enter your name: ";\n$name = trim(fgets(STDIN));\necho "Hello, $name!\\n";`,
+    kotlin: `fun main() {\n    print("Enter your name: ")\n    val name = readLine()\n    println("Hello, $name!")\n}`,
+    swift: `import Foundation\nprint("Enter your name: ", terminator: "")\nif let name = readLine() {\n    print("Hello, \\(name)!")\n}`,
     scala: `object Main extends App {\n  println("Hello, World!")\n}`,
-    haskell: `main :: IO ()\nmain = putStrLn "Hello, World!"`,
-    lua: `print("Hello, World!")`,
-    perl: `print "Hello, World!\\n";`,
-    r: `cat("Hello, World!\\n")`,
-    rscript: `cat("Hello, World!\\n")`,
-    bash: `#!/bin/bash\necho "Hello, World!"`,
-    sh: `#!/bin/sh\necho "Hello, World!"`,
-    dash: `#!/bin/dash\necho "Hello, World!"`,
-    powershell: `Write-Output "Hello, World!"`,
-    dart: `void main() {\n  print('Hello, World!');\n}`,
-    julia: `println("Hello, World!")`,
-    elixir: `IO.puts "Hello, World!"`,
+    haskell: `main :: IO ()\nmain = do\n  putStr "Enter your name: "\n  name <- getLine\n  putStrLn $ "Hello, " ++ name ++ "!"`,
+    lua: `io.write("Enter your name: ")\nlocal name = io.read()\nprint("Hello, " .. name .. "!")`,
+    perl: `print "Enter your name: ";\nmy $name = <STDIN>;\nchomp $name;\nprint "Hello, $name!\\n";`,
+    r: `name <- readline("Enter your name: ")\ncat(paste0("Hello, ", name, "!\\n"))`,
+    bash: `#!/bin/bash\nread -p "Enter your name: " name\necho "Hello, $name!"`,
+    sh: `#!/bin/sh\nprintf "Enter your name: "\nread name\necho "Hello, $name!"`,
+    dart: `import 'dart:io';\n\nvoid main() {\n  stdout.write("Enter your name: ");\n  String? name = stdin.readLineSync();\n  print("Hello, $name!");\n}`,
+    julia: `print("Enter your name: ")\nname = readline()\nprintln("Hello, $name!")`,
+    elixir: `IO.write("Enter your name: ")\nname = IO.gets("") |> String.trim()\nIO.puts("Hello, #{name}!")`,
     erlang: `-module(main).\n-export([main/0]).\n\nmain() ->\n    io:fwrite("Hello, World!~n").`,
     ocaml: `let () = print_endline "Hello, World!"`,
-    pascal: `program Hello;\nbegin\n  writeln('Hello, World!');\nend.`,
-    nim: `echo "Hello, World!"`,
+    pascal: `program Hello;\nvar name: string;\nbegin\n  write('Enter your name: ');\n  readln(name);\n  writeln('Hello, ', name, '!');\nend.`,
+    nim: `import strformat\nstdout.write("Enter your name: ")\nlet name = stdin.readLine()\necho fmt"Hello, {name}!"`,
     zig: `const std = @import("std");\n\npub fn main() !void {\n    const stdout = std.io.getStdOut().writer();\n    try stdout.print("Hello, World!\\n", .{});\n}`,
     sqlite3: `SELECT 'Hello, World!';`,
     brainfuck: `++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.`,
     groovy: `println "Hello, World!"`,
     clojure: `(println "Hello, World!")`,
     coffeescript: `console.log "Hello, World!"`,
-    crystal: `puts "Hello, World!"`,
+    crystal: `print "Enter your name: "\nname = gets.not_nil!.chomp\nputs "Hello, #{name}!"`,
     cobol: `       IDENTIFICATION DIVISION.\n       PROGRAM-ID. Hello.\n       PROCEDURE DIVISION.\n           DISPLAY "Hello, World!".\n           STOP RUN.`,
     lisp: `(print "Hello, World!")`,
     prolog: `:- initialization(main, main).\nmain :- write('Hello, World!'), nl.`,
+    powershell: `Write-Host "Enter your name: " -NoNewline\n$name = Read-Host\nWrite-Output "Hello, $name!"`,
 };
 
 // ── State ──────────────────────────────────────────────────────────────────
 
-let editor = null;
-let runtimes = [];
+let editor       = null;
+let runtimes     = [];
 let runtimesByLang = {};
+let term         = null;
+let fitAddon     = null;
+let activeWs     = null;
+let isRunning    = false;
+
+// ── Terminal Init ──────────────────────────────────────────────────────────
+
+function initTerminal() {
+    term = new Terminal({
+        theme: {
+            background: '#0d1117',
+            foreground: '#c9d1d9',
+            cursor:     '#58a6ff',
+            cursorAccent: '#0d1117',
+            selection:  'rgba(88,166,255,0.3)',
+            black:   '#484f58', red:     '#f85149',
+            green:   '#3fb950', yellow:  '#d29922',
+            blue:    '#58a6ff', magenta: '#bc8cff',
+            cyan:    '#39c5cf', white:   '#c9d1d9',
+            brightBlack:   '#6e7681', brightRed:     '#ff7b72',
+            brightGreen:   '#56d364', brightYellow:  '#e3b341',
+            brightBlue:    '#79c0ff', brightMagenta: '#d2a8ff',
+            brightCyan:    '#56d4dd', brightWhite:   '#f0f6fc',
+        },
+        fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Menlo', monospace",
+        fontSize: 13,
+        lineHeight: 1.5,
+        cursorBlink: true,
+        cursorStyle: 'bar',
+        scrollback: 5000,
+        disableStdin: false,
+        allowProposedApi: true,
+    });
+
+    fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(document.getElementById('xterm-container'));
+    fitAddon.fit();
+
+    // Welcome message
+    termWriteLn('\x1b[2m[Piston IDE — Interactive Terminal]\x1b[0m');
+    termWriteLn('\x1b[2mPress \x1b[0m\x1b[1;32mCtrl+Enter\x1b[0m\x1b[2m or click Run to execute your code.\x1b[0m');
+    termWriteLn('');
+
+    // Resize observer
+    const ro = new ResizeObserver(() => { try { fitAddon.fit(); } catch(_) {} });
+    ro.observe(document.getElementById('xterm-container'));
+
+    // Input handler — line-buffered for interactive stdin
+    let lineBuffer = '';
+    term.onData(data => {
+        if (!isRunning || !activeWs || activeWs.readyState !== WebSocket.OPEN) return;
+
+        if (data === '\r' || data === '\n') {
+            term.write('\r\n');
+            activeWs.send(JSON.stringify({ type: 'data', stream: 'stdin', data: lineBuffer + '\n' }));
+            lineBuffer = '';
+        } else if (data === '\u007f' || data === '\u0008') {
+            // Backspace
+            if (lineBuffer.length > 0) {
+                lineBuffer = lineBuffer.slice(0, -1);
+                term.write('\b \b');
+            }
+        } else if (data === '\u0003') {
+            // Ctrl+C → SIGINT
+            term.write('^C\r\n');
+            if (activeWs && activeWs.readyState === WebSocket.OPEN) {
+                try { activeWs.send(JSON.stringify({ type: 'signal', signal: 'SIGINT' })); } catch(_) {}
+            }
+            lineBuffer = '';
+        } else if (data >= ' ' || data === '\t') {
+            lineBuffer += data;
+            term.write(data);
+        }
+    });
+}
+
+function termWriteLn(text) { term.write(text + '\r\n'); }
+function termClear() { term.write('\x1b[2J\x1b[H'); }
 
 // ── Monaco Init ────────────────────────────────────────────────────────────
 
@@ -639,11 +603,9 @@ require(['vs/editor/editor.main'], () => {
         cursorSmoothCaretAnimation: 'on',
     });
 
-    editor.addCommand(
-        monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
-        runCode
-    );
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, runCode);
 
+    initTerminal();
     loadRuntimes();
 });
 
@@ -655,7 +617,6 @@ async function loadRuntimes() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         runtimes = await res.json();
 
-        // Group by language, pick latest version
         runtimesByLang = {};
         runtimes.forEach(rt => {
             const existing = runtimesByLang[rt.language];
@@ -666,7 +627,8 @@ async function loadRuntimes() {
 
         populateSelect();
     } catch (e) {
-        showApiError(`Could not reach Piston API: ${e.message}\n\nMake sure the container is running:\n  ./deploy.sh start`);
+        termWriteLn('\x1b[31mCould not reach Piston API: ' + e.message + '\x1b[0m');
+        termWriteLn('\x1b[33mMake sure the stack is running: ./deploy.sh start\x1b[0m');
         setStatus('Error', 'API unavailable', 'error');
     }
 }
@@ -675,8 +637,8 @@ function semverGt(a, b) {
     const pa = String(a).split('.').map(n => parseInt(n) || 0);
     const pb = String(b).split('.').map(n => parseInt(n) || 0);
     for (let i = 0; i < 3; i++) {
-        if ((pa[i] || 0) > (pb[i] || 0)) return true;
-        if ((pa[i] || 0) < (pb[i] || 0)) return false;
+        if ((pa[i]||0) > (pb[i]||0)) return true;
+        if ((pa[i]||0) < (pb[i]||0)) return false;
     }
     return false;
 }
@@ -684,26 +646,24 @@ function semverGt(a, b) {
 function populateSelect() {
     const sel = document.getElementById('lang-select');
     sel.innerHTML = '';
-
     const langs = Object.keys(runtimesByLang).sort();
-    langs.forEach(lang => {
-        const opt = document.createElement('option');
-        opt.value = lang;
-        opt.textContent = lang;
-        opt.dataset.version = runtimesByLang[lang].version;
-        sel.appendChild(opt);
-    });
 
     if (langs.length === 0) {
         const opt = document.createElement('option');
         opt.textContent = 'No runtimes installed';
         opt.disabled = true;
         sel.appendChild(opt);
-        setStatus('Piston IDE', 'No runtimes — install with: ./deploy.sh install python', 'error');
+        setStatus('Piston IDE', 'No runtimes — run: ./deploy.sh install python', 'error');
         return;
     }
 
-    // Prefer python, else first
+    langs.forEach(lang => {
+        const opt = document.createElement('option');
+        opt.value = lang;
+        opt.textContent = lang;
+        sel.appendChild(opt);
+    });
+
     if (runtimesByLang.python) sel.value = 'python';
     onLangChange();
 }
@@ -715,234 +675,210 @@ function onLangChange() {
     if (!rt || !editor) return;
 
     document.getElementById('version-badge').textContent = `v${rt.version}`;
-
-    const monacoLang = MONACO_LANG[lang] || 'plaintext';
-    monaco.editor.setModelLanguage(editor.getModel(), monacoLang);
-
-    const code = DEFAULT_CODE[lang] || `// ${lang}\n`;
-    editor.setValue(code);
+    monaco.editor.setModelLanguage(editor.getModel(), MONACO_LANG[lang] || 'plaintext');
+    editor.setValue(DEFAULT_CODE[lang] || `// ${lang}\n`);
     editor.setPosition({ lineNumber: 1, column: 1 });
-
-    const ext = FILE_EXT[lang] || 'txt';
-    document.getElementById('filename-label').textContent = `main.${ext}`;
-
+    document.getElementById('filename-label').textContent = `main.${FILE_EXT[lang] || 'txt'}`;
     setStatus(`${lang} ${rt.version}`, 'Ready — Ctrl+Enter to run', 'default');
 }
 
-// ── Run ────────────────────────────────────────────────────────────────────
+// ── Run via WebSocket ──────────────────────────────────────────────────────
 
 async function runCode() {
-    const sel = document.getElementById('lang-select');
+    if (isRunning) return;
+
+    const sel  = document.getElementById('lang-select');
     const lang = sel.value;
-    const rt = runtimesByLang[lang];
+    const rt   = runtimesByLang[lang];
     if (!rt || !editor) return;
 
-    const btn = document.getElementById('run-btn');
-    btn.disabled = true;
-    btn.classList.add('loading');
-
     const code = editor.getValue();
-    const stdin = document.getElementById('stdin-input').value;
-    const argsRaw = document.getElementById('args-input').value.trim();
-    const args = argsRaw ? argsRaw.split(/\s+/) : [];
-    const ext = FILE_EXT[lang] || 'txt';
+    const ext  = FILE_EXT[lang] || 'txt';
 
-    clearOutput();
-    setStatus(`${lang} ${rt.version}`, 'Running...', 'running');
+    setRunning(true);
+    termClear();
+    showTab('terminal');
+
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl   = `${wsProto}//${location.host}/api/v2/connect`;
+
+    let compileStats = null;
+    let runStats     = null;
+    let currentStage = null;
 
     try {
-        const res = await fetch('/api/v2/execute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+        const ws = new WebSocket(wsUrl);
+        activeWs = ws;
+
+        ws.onopen = () => {
+            setStatus(`${lang} ${rt.version}`, 'Running...', 'running');
+            ws.send(JSON.stringify({
+                type: 'init',
                 language: lang,
                 version: rt.version,
                 files: [{ name: `main.${ext}`, content: code }],
-                stdin,
-                args,
-            }),
-        });
+                args: [],
+                stdin: '',
+            }));
+        };
 
-        const data = await res.json();
+        ws.onmessage = (event) => {
+            let msg;
+            try { msg = JSON.parse(event.data); } catch (_) { return; }
 
-        if (!res.ok) {
-            showApiError(data.message || `API error ${res.status}`);
-            setStatus(`${lang} ${rt.version}`, 'Error', 'error');
-            return;
-        }
+            switch (msg.type) {
+                case 'runtime':
+                    termWriteLn(`\x1b[2m[${msg.language} ${msg.version}]\x1b[0m`);
+                    break;
 
-        displayResult(data);
+                case 'stage':
+                    currentStage = msg.stage;
+                    if (msg.stage === 'compile') {
+                        termWriteLn('\x1b[33m[compiling...]\x1b[0m');
+                    } else if (msg.stage === 'run') {
+                        termWriteLn('\x1b[32m[running — type below to send input]\x1b[0m');
+                    }
+                    break;
+
+                case 'data':
+                    if (msg.stream === 'stderr') {
+                        term.write('\x1b[31m' + msg.data + '\x1b[0m');
+                    } else {
+                        term.write(msg.data);
+                    }
+                    break;
+
+                case 'exit':
+                    if (msg.stage === 'compile') compileStats = msg;
+                    if (msg.stage === 'run')     runStats     = msg;
+                    break;
+            }
+        };
+
+        ws.onclose = (event) => {
+            activeWs = null;
+            setRunning(false);
+
+            if (event.code === 4999) {
+                // Normal job completion
+                const exitCode = runStats?.code ?? compileStats?.code;
+                const ok = exitCode === 0 && !runStats?.signal;
+                const msg = exitCode != null
+                    ? `Exited ${exitCode}${runStats?.signal ? ' · ' + runStats.signal : ''}`
+                    : 'Finished';
+                termWriteLn('');
+                termWriteLn(`\x1b[2m[${ok ? '✓' : '✗'} ${msg}]\x1b[0m`);
+                setStatus(`${lang} ${rt.version}`, msg, ok ? 'success' : 'error');
+                updateStats(lang, rt.version, compileStats, runStats);
+            } else if (event.code === 4001) {
+                termWriteLn('\x1b[31m[Timed out waiting for init]\x1b[0m');
+                setStatus(lang, 'Init timeout', 'error');
+            } else if (isKilled) {
+                termWriteLn('\x1b[33m[Stopped by user]\x1b[0m');
+                setStatus(`${lang} ${rt.version}`, 'Stopped', 'killed');
+            } else {
+                termWriteLn(`\x1b[31m[Connection closed: ${event.code}]\x1b[0m`);
+                setStatus(lang, 'Disconnected', 'error');
+            }
+            isKilled = false;
+        };
+
+        ws.onerror = () => {
+            termWriteLn('\x1b[31m[WebSocket error — is the API running?]\x1b[0m');
+            setStatus(lang, 'Connection error', 'error');
+        };
+
     } catch (e) {
-        showApiError(`Network error: ${e.message}`);
-        setStatus(`${lang} ${rt.version}`, 'Network error', 'error');
-    } finally {
-        btn.disabled = false;
-        btn.classList.remove('loading');
+        termWriteLn(`\x1b[31m[Error: ${e.message}]\x1b[0m`);
+        setRunning(false);
     }
 }
 
-// ── Display Result ─────────────────────────────────────────────────────────
+let isKilled = false;
 
-function displayResult(result) {
-    const run = result.run || {};
-    const compile = result.compile;
-    const lang = result.language;
-    const ver = result.version;
-
-    // ── Output tab ──
-    const outDiv = document.getElementById('output-content');
-    document.getElementById('placeholder').style.display = 'none';
-    let outHtml = '';
-
-    if (compile) {
-        if (compile.stdout) {
-            outHtml += `<div class="out-compile-label">compile stdout</div><div class="out-stdout">${esc(compile.stdout)}</div>`;
-        }
-        if (compile.stderr) {
-            outHtml += `<div class="out-compile-label">compile stderr</div><div class="out-stderr">${esc(compile.stderr)}</div>`;
-        }
-        if (compile.code !== 0) {
-            setStatus(`${lang} ${ver}`, `Compile failed (exit ${compile.code})`, 'error');
-            outDiv.innerHTML = outHtml || `<div class="err-block">Compilation failed with exit code ${compile.code}</div>`;
-            updateSeparatePanes(run, compile);
-            renderStats(result);
-            return;
-        }
-    }
-
-    if (run.stdout) outHtml += `<div class="out-stdout">${esc(run.stdout)}</div>`;
-    if (run.stderr) outHtml += `<div class="out-stderr">${esc(run.stderr)}</div>`;
-    if (!run.stdout && !run.stderr) outHtml += `<span class="out-empty">Program produced no output.</span>`;
-
-    outDiv.innerHTML = outHtml;
-
-    updateSeparatePanes(run, compile);
-    renderStats(result);
-
-    // Status bar
-    const ok = run.code === 0 && !run.status;
-    const statusMsg = ok
-        ? `Exited 0 · ${run.wall_time ?? '?'}ms wall · ${fmt_mem(run.memory)}`
-        : `Exit ${run.code ?? '?'}${run.signal ? ` · ${run.signal}` : ''}${run.status ? ` · ${run.status}` : ''}`;
-    setStatus(`${lang} ${ver}`, statusMsg, ok ? 'success' : 'error');
-
-    // Update stderr badge
-    const stderrBadge = document.getElementById('badge-stderr');
-    if (run.stderr) {
-        stderrBadge.textContent = '!';
-        stderrBadge.classList.add('show');
-    }
-    const stdoutBadge = document.getElementById('badge-stdout');
-    if (run.stdout) {
-        stdoutBadge.classList.remove('show');
-    }
+function killJob() {
+    if (!activeWs) return;
+    isKilled = true;
+    try { activeWs.close(); } catch(_) {}
+    activeWs = null;
 }
 
-function updateSeparatePanes(run, compile) {
-    const stdoutDiv = document.getElementById('stdout-content');
-    const stderrDiv = document.getElementById('stderr-content');
+// ── Stats ──────────────────────────────────────────────────────────────────
 
-    stdoutDiv.innerHTML = run.stdout
-        ? `<div class="out-stdout">${esc(run.stdout)}</div>`
-        : `<span class="out-empty">No stdout output.</span>`;
+function updateStats(lang, ver, compile, run) {
+    const pane = document.getElementById('stats-pane');
+    if (!run && !compile) { return; }
 
-    let stderrHtml = '';
-    if (compile && compile.stderr) {
-        stderrHtml += `<div class="out-compile-label">compile</div><div class="out-stderr">${esc(compile.stderr)}</div>`;
-    }
-    if (run.stderr) stderrHtml += `<div class="out-stderr">${esc(run.stderr)}</div>`;
-    stderrDiv.innerHTML = stderrHtml || `<span class="out-empty">No stderr output.</span>`;
-}
-
-function renderStats(result) {
-    const run = result.run || {};
-    const compile = result.compile;
-    const codeClass = run.code === 0 ? 'ok' : 'err';
-    const statusClass = !run.status ? 'ok' : 'warn';
+    const r = run || {};
+    const c = compile;
+    const ok = r.code === 0 && !r.signal;
 
     let html = `<div class="stats-grid">
-        <div class="stat-card"><div class="stat-label">Exit Code</div><div class="stat-val ${codeClass}">${run.code ?? '—'}</div></div>
-        <div class="stat-card"><div class="stat-label">Status</div><div class="stat-val ${statusClass}">${run.status || 'OK'}</div></div>
-        <div class="stat-card"><div class="stat-label">Wall Time</div><div class="stat-val">${run.wall_time != null ? run.wall_time + ' ms' : '—'}</div></div>
-        <div class="stat-card"><div class="stat-label">CPU Time</div><div class="stat-val">${run.cpu_time != null ? run.cpu_time + ' ms' : '—'}</div></div>
-        <div class="stat-card"><div class="stat-label">Memory</div><div class="stat-val">${fmt_mem(run.memory)}</div></div>
-        <div class="stat-card"><div class="stat-label">Signal</div><div class="stat-val ${run.signal ? 'err' : ''}">${run.signal || 'none'}</div></div>
+        <div class="stat-card"><div class="stat-label">Exit Code</div><div class="stat-val ${ok ? 'ok' : 'err'}">${r.code ?? '—'}</div></div>
+        <div class="stat-card"><div class="stat-label">Signal</div><div class="stat-val ${r.signal ? 'err' : ''}">${r.signal || 'none'}</div></div>
+        <div class="stat-card"><div class="stat-label">Language</div><div class="stat-val" style="font-size:14px">${lang}</div></div>
+        <div class="stat-card"><div class="stat-label">Version</div><div class="stat-val" style="font-size:14px">${ver}</div></div>
     </div>`;
 
-    if (compile) {
-        const cc = compile.code === 0 ? 'ok' : 'err';
+    if (c) {
+        const cc = c.code === 0 ? 'ok' : 'err';
         html += `<div class="stat-section-title">Compile Stage</div>
         <div class="stats-grid">
-            <div class="stat-card"><div class="stat-label">Exit Code</div><div class="stat-val ${cc}">${compile.code ?? '—'}</div></div>
-            <div class="stat-card"><div class="stat-label">Wall Time</div><div class="stat-val">${compile.wall_time != null ? compile.wall_time + ' ms' : '—'}</div></div>
-            <div class="stat-card"><div class="stat-label">CPU Time</div><div class="stat-val">${compile.cpu_time != null ? compile.cpu_time + ' ms' : '—'}</div></div>
-            <div class="stat-card"><div class="stat-label">Status</div><div class="stat-val ${compile.status ? 'warn' : 'ok'}">${compile.status || 'OK'}</div></div>
+            <div class="stat-card"><div class="stat-label">Exit Code</div><div class="stat-val ${cc}">${c.code ?? '—'}</div></div>
+            <div class="stat-card"><div class="stat-label">Signal</div><div class="stat-val ${c.signal ? 'err' : ''}">${c.signal || 'none'}</div></div>
         </div>`;
     }
 
-    document.getElementById('stats-content').innerHTML = html;
+    pane.innerHTML = html;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── UI Helpers ─────────────────────────────────────────────────────────────
 
-function esc(str) {
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+function setRunning(running) {
+    isRunning = running;
+    const runBtn  = document.getElementById('run-btn');
+    const killBtn = document.getElementById('kill-btn');
+    runBtn.disabled = running;
+    runBtn.classList.toggle('loading', running);
+    killBtn.classList.toggle('visible', running);
 }
 
-function fmt_mem(bytes) {
-    if (!bytes) return '—';
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-}
+function showTab(tab) {
+    const termContainer = document.getElementById('xterm-container');
+    const statsPane     = document.getElementById('stats-pane');
+    const termBtn       = document.getElementById('tab-terminal-btn');
+    const statsBtn      = document.getElementById('tab-stats-btn');
 
-function clearOutput() {
-    document.getElementById('placeholder').style.display = '';
-    document.getElementById('output-content').innerHTML = '';
-    document.getElementById('stdout-content').innerHTML = '<span class="out-empty">No output yet.</span>';
-    document.getElementById('stderr-content').innerHTML = '<span class="out-empty">No stderr yet.</span>';
-    document.getElementById('stats-content').innerHTML = '<span class="out-empty">Run code to see execution stats.</span>';
-    document.getElementById('badge-stderr').classList.remove('show');
-    document.getElementById('badge-stdout').classList.remove('show');
-}
-
-function showApiError(msg) {
-    document.getElementById('placeholder').style.display = 'none';
-    document.getElementById('output-content').innerHTML = `<div class="err-block">${esc(msg)}</div>`;
+    if (tab === 'terminal') {
+        termContainer.classList.remove('hidden');
+        statsPane.classList.remove('active');
+        termBtn.classList.add('active');
+        statsBtn.classList.remove('active');
+        try { fitAddon.fit(); } catch(_) {}
+    } else {
+        termContainer.classList.add('hidden');
+        statsPane.classList.add('active');
+        termBtn.classList.remove('active');
+        statsBtn.classList.add('active');
+    }
 }
 
 function setStatus(lang, msg, state = 'default') {
     const bar = document.getElementById('statusbar');
     bar.className = 'statusbar' + (state !== 'default' ? ` ${state}` : '');
     document.getElementById('sb-lang').textContent = `⚡ ${lang}`;
-    document.getElementById('sb-msg').textContent = msg;
+    document.getElementById('sb-msg').textContent  = msg;
 }
 
 // ── Event Listeners ────────────────────────────────────────────────────────
 
 document.getElementById('lang-select').addEventListener('change', onLangChange);
-
 document.getElementById('run-btn').addEventListener('click', runCode);
+document.getElementById('kill-btn').addEventListener('click', killJob);
+document.getElementById('clear-btn').addEventListener('click', () => { termClear(); });
 
-document.getElementById('stdin-toggle').addEventListener('click', () => {
-    const panel = document.getElementById('input-panel');
-    const btn = document.getElementById('stdin-toggle');
-    panel.classList.toggle('open');
-    btn.classList.toggle('active');
-});
-
-document.querySelectorAll('.out-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.out-tab').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
-    });
-});
+document.getElementById('tab-terminal-btn').addEventListener('click', () => showTab('terminal'));
+document.getElementById('tab-stats-btn').addEventListener('click', () => showTab('stats'));
 </script>
 </body>
 </html>

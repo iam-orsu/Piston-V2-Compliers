@@ -122,9 +122,9 @@ check_port_conflict() {
 
 # ── API Helpers ───────────────────────────────────────────────────────────────
 wait_for_api() {
-    echo -e "${YELLOW}⏳  Waiting for Piston API...${NC}"
+    echo -e "${YELLOW}⏳  Waiting for Piston API (replica 1)...${NC}"
     local attempts=0
-    while [[ $attempts -lt 60 ]]; do
+    while [[ $attempts -lt 90 ]]; do
         if curl -sf http://localhost:2000/api/v2/runtimes &>/dev/null; then
             echo -e "${GREEN}✅  API is ready.${NC}"
             return 0
@@ -132,7 +132,7 @@ wait_for_api() {
         sleep 2
         ((attempts++))
     done
-    warn "API did not become ready in 120s. Run: ./deploy.sh logs api"
+    warn "API did not become ready in 180s. Run: ./deploy.sh logs api1"
     return 1
 }
 
@@ -255,6 +255,7 @@ cmd_status() {
     echo ""
     $DC ps
     echo ""
+
     local count
     count=$(runtime_count)
     if [[ "$count" == "0" ]]; then
@@ -264,11 +265,16 @@ cmd_status() {
         echo -e "       Run './deploy.sh runtimes' to list them."
     fi
     echo ""
+    echo -e "   ${CYAN}ℹ  3 API replicas running — capacity: ~450 concurrent students${NC}"
+    echo -e "   ${CYAN}ℹ  Per-job memory limit: 256 MB · Run timeout: 15s${NC}"
+    echo ""
 }
 
 cmd_logs() {
     check_docker
     local service="${1:-}"
+    # Allow legacy alias: "api" → "api1"
+    if [[ "$service" == "api" ]]; then service="api1"; fi
     echo -e "${BLUE}${BOLD}● Logs${service:+ ($service)}${NC}  (Ctrl+C to stop)"
     echo ""
     # shellcheck disable=SC2086
@@ -316,7 +322,7 @@ cmd_help() {
     echo -e "  ${RED}stop${NC}                Stop all containers"
     echo -e "  ${YELLOW}restart${NC}             Rebuild and restart (applies code changes)"
     echo -e "  ${BLUE}status${NC}              Container status + runtime count"
-    echo -e "  ${BLUE}logs${NC} [service]      Tail logs  (service: api | frontend)"
+    echo -e "  ${BLUE}logs${NC} [service]      Tail logs  (service: api1 | api2 | api3 | frontend)"
     echo -e "  ${CYAN}runtimes${NC}            List installed language runtimes"
     echo -e "  ${CYAN}install${NC} <lang>      Install a specific language runtime"
     echo -e "  ${CYAN}list${NC}                List all available packages from registry"
@@ -325,7 +331,7 @@ cmd_help() {
     echo -e "  ./deploy.sh start"
     echo -e "  ./deploy.sh install python"
     echo -e "  ./deploy.sh install javascript"
-    echo -e "  ./deploy.sh logs api"
+    echo -e "  ./deploy.sh logs api1"
     echo -e "  ./deploy.sh runtimes"
     echo -e "  ./deploy.sh restart"
     echo ""
