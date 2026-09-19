@@ -1,5 +1,3 @@
-version: '3.2'
-
 services:
     api:
         build:
@@ -17,11 +15,11 @@ services:
         networks:
             - piston-net
         healthcheck:
-            test: ["CMD", "curl", "-sf", "http://localhost:2000/api/v2/runtimes"]
+            test: ["CMD", "node", "-e", "require('http').get('http://localhost:2000/api/v2/runtimes', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
             interval: 15s
             timeout: 5s
             retries: 5
-            start_period: 30s
+            start_period: 20s
 
     frontend:
         build:
@@ -38,7 +36,7 @@ services:
         networks:
             - piston-net
         healthcheck:
-            test: ["CMD", "wget", "-qO-", "http://localhost/"]
+            test: ["CMD", "sh", "-c", "nc -z localhost 80 || exit 1"]
             interval: 30s
             timeout: 5s
             retries: 3

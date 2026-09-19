@@ -34,7 +34,7 @@ else
     exit 1
 fi
 
-DEFAULT_RUNTIMES=(python javascript typescript java "c++" go rust bash)
+DEFAULT_RUNTIMES=(python node typescript java gcc go rust bash)
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 log()  { echo -e "${GREEN}▶  ${NC}$*"; }
@@ -97,11 +97,26 @@ check_disk_space() {
     fi
 }
 
+kill_port() {
+    local port="$1"
+    local pids
+    pids=$(ss -tlnp 2>/dev/null | grep ":${port} " | grep -oP 'pid=\K[0-9]+' || true)
+    if [[ -z "$pids" ]]; then
+        pids=$(lsof -ti tcp:"$port" 2>/dev/null || true)
+    fi
+    if [[ -n "$pids" ]]; then
+        echo -e "   ${YELLOW}⚡  Port ${port} in use — killing PID(s): ${pids}${NC}"
+        # shellcheck disable=SC2086
+        kill -9 $pids 2>/dev/null || true
+        sleep 1
+    fi
+}
+
 check_port_conflict() {
     local port="$1"
     if ss -tlnp 2>/dev/null | grep -q ":${port} " || \
-       netstat -tlnp 2>/dev/null | grep -q ":${port} "; then
-        warn "Port $port appears to be in use. The service may fail to bind."
+       lsof -ti tcp:"$port" &>/dev/null 2>&1; then
+        kill_port "$port"
     fi
 }
 
@@ -149,26 +164,30 @@ install_runtime() {
 
 auto_install_runtimes() {
     ensure_cli_deps
-    local count
-    count=$(runtime_count)
-
-    if [[ "$count" -gt 0 ]]; then
-        echo -e "${GREEN}✅  Runtimes already installed (${count} found) — skipping auto-install.${NC}"
-        info "Run './deploy.sh install <lang>' to add more."
-        return 0
-    fi
 
     echo ""
-    echo -e "${CYAN}${BOLD}🚀  First run — auto-installing default runtimes...${NC}"
-    echo -e "${YELLOW}    This may take a few minutes depending on your connection.${NC}"
-    echo ""
+    echo -e "${CYAN}${BOLD}🚀  Checking default runtimes...${NC}"
 
+    local installed_any=0
     for lang in "${DEFAULT_RUNTIMES[@]}"; do
-        install_runtime "$lang"
+        if curl -sf http://localhost:2000/api/v2/runtimes 2>/dev/null \
+                | grep -q "\"language\":\"${lang}\""; then
+            step "$lang already installed — skipping."
+        else
+            echo -e "   ${YELLOW}⬇  Installing ${BOLD}${lang}${NC}${YELLOW}...${NC}"
+            (cd "$SCRIPT_DIR/cli" && node index.js ppman install "$lang") 2>&1 | tail -3 || {
+                warn "Failed to install $lang"
+            }
+            installed_any=1
+        fi
     done
 
     echo ""
-    echo -e "${GREEN}${BOLD}✅  Default runtimes installed!${NC}"
+    if [[ "$installed_any" -eq 1 ]]; then
+        echo -e "${GREEN}${BOLD}✅  All default runtimes ready!${NC}"
+    else
+        echo -e "${GREEN}${BOLD}✅  All default runtimes already installed.${NC}"
+    fi
 }
 
 # ── Commands ─────────────────────────────────────────────────────────────────
