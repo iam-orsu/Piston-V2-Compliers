@@ -10,6 +10,7 @@ const MAX_MS        = parseInt(process.env.MAX_LIFETIME_MS  || '1800000');  // 3
 const MAX_SESSIONS  = parseInt(process.env.MAX_SESSIONS     || '200');      // hard container cap
 
 const activeSessions = new Map();
+let pendingCount = 0;  // sessions being started but not yet in activeSessions
 
 class Session {
     constructor(ws) {
@@ -25,6 +26,11 @@ class Session {
     }
 
     async start() {
+        // Register a no-op error handler immediately so ws.send() errors during docker
+        // startup (before index.js registers its real handler) don't crash the process.
+        // The real handler in index.js is added later and also fires — both are safe.
+        this.ws.on('error', () => {});
+
         // All security constraints applied here — students can't change these
         const dockerArgs = [
             'run', '--rm', '-it',
@@ -138,6 +144,7 @@ class Session {
             'exec', '-i', this.containerName,
             'sh', '-c', cmd,
         ]);
+        child.stdin.on('error', () => {});  // suppress EPIPE if docker exec dies early
         child.stdin.write(content, 'utf8');
         child.stdin.end();
         child.on('exit', (code) => {
@@ -196,12 +203,20 @@ class Session {
 }
 
 async function createSession(ws) {
-    if (activeSessions.size >= MAX_SESSIONS) {
+    // Check both active AND pending to prevent concurrent connections bypassing the cap.
+    // Without pendingCount, 200 simultaneous connects all pass the size check before
+    // any session is added to the map (docker run takes ~300ms).
+    if (activeSessions.size + pendingCount >= MAX_SESSIONS) {
         throw new Error(`Server at capacity (${MAX_SESSIONS} sessions). Try again shortly.`);
     }
-    const session = new Session(ws);
-    await session.start();
-    return session;
+    pendingCount++;
+    try {
+        const session = new Session(ws);
+        await session.start();
+        return session;
+    } finally {
+        pendingCount--;
+    }
 }
 
 // Kill orphaned student containers left from previous crash
