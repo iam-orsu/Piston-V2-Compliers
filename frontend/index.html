@@ -711,6 +711,19 @@ function onLangChange() {
     const ext  = FILE_EXT[lang] || 'txt';
     document.getElementById('filename-label').textContent = `${stem}.${ext}`;
     setStatus(`${lang} ${rt.version}`, 'Ready — Ctrl+Enter to run', 'default');
+
+    // Show Shell tab only for supported languages
+    const shellBtn       = document.getElementById('tab-shell-btn');
+    const shellSupported = SHELL_LANGS.has(lang);
+    shellBtn.style.display = shellSupported ? '' : 'none';
+
+    // If Shell tab is active but new language doesn't support it, fall back to Terminal
+    if (!shellSupported && shellBtn.classList.contains('active')) {
+        showTab('terminal');
+    }
+
+    // If shell is live, seed the new language's file immediately
+    if (shellSupported) seedShell();
 }
 
 // ── Run via WebSocket ──────────────────────────────────────────────────────
@@ -920,6 +933,27 @@ document.getElementById('tab-shell-btn').addEventListener('click', () => showTab
 
 // ── Sandbox Shell (ws /terminal) ───────────────────────────────────────────
 
+// Languages that get the Shell tab — interpreted + C/Java (no Rust, Go, C++, etc.)
+const SHELL_LANGS = new Set(['python', 'python2', 'node', 'javascript', 'typescript', 'c', 'java']);
+
+function shellFilename() {
+    const lang = document.getElementById('lang-select').value;
+    const stem = FILE_STEM[lang] || 'main';
+    const ext  = FILE_EXT[lang]  || 'txt';
+    return `${stem}.${ext}`;
+}
+
+function seedShell() {
+    if (!shellWs || !shellReady || shellWs.readyState !== WebSocket.OPEN) return;
+    const lang = document.getElementById('lang-select').value;
+    if (!SHELL_LANGS.has(lang)) return;
+    shellWs.send(JSON.stringify({
+        type:     'seed',
+        filename: shellFilename(),
+        content:  editor ? editor.getValue() : '',
+    }));
+}
+
 let shellTerm      = null;
 let shellFitAddon  = null;
 let shellWs        = null;
@@ -1004,6 +1038,8 @@ function connectShell() {
                     const dims = shellFitAddon.proposeDimensions();
                     if (dims) ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
                 } catch(_) {}
+                // Seed the current editor file into the sandbox home directory
+                seedShell();
                 break;
             case 'output':
                 shellTerm.write(msg.data);

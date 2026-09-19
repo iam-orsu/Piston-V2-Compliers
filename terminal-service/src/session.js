@@ -1,7 +1,7 @@
 'use strict';
 
 const pty              = require('node-pty');
-const { execSync, exec } = require('child_process');
+const { execSync, exec, spawn } = require('child_process');
 const { randomBytes }  = require('crypto');
 
 const SANDBOX_IMAGE = process.env.SANDBOX_IMAGE || 'piston-sandbox:latest';
@@ -109,6 +109,34 @@ class Session {
     resize(cols, rows) {
         if (this.dead || !this._pty) return;
         try { this._pty.resize(Number(cols) || 80, Number(rows) || 24); } catch (_) {}
+    }
+
+    seedFile(filename, content) {
+        if (this.dead) return;
+        // Only allow safe filenames (e.g. main.py, Main.java, main.ts)
+        if (!/^[a-zA-Z][a-zA-Z0-9_.\-]*$/.test(filename)) return;
+        if (typeof content !== 'string' || content.length > 65536) return;
+        this._doSeed(filename, content, 5);
+    }
+
+    _doSeed(filename, content, retriesLeft) {
+        if (this.dead || retriesLeft <= 0) return;
+        const child = spawn('docker', [
+            'exec', '-i', this.containerName,
+            'sh', '-c', `cat > /home/sandbox/${filename}`,
+        ]);
+        child.stdin.write(content, 'utf8');
+        child.stdin.end();
+        child.on('exit', (code) => {
+            if (code !== 0 && !this.dead) {
+                setTimeout(() => this._doSeed(filename, content, retriesLeft - 1), 400);
+            } else if (code === 0) {
+                console.log(`[session ${this.id}] seeded ${filename} (${content.length} bytes)`);
+            }
+        });
+        child.on('error', () => {
+            if (!this.dead) setTimeout(() => this._doSeed(filename, content, retriesLeft - 1), 400);
+        });
     }
 
     destroy(reason = 'unknown') {

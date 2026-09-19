@@ -22,8 +22,9 @@ app.get('/stats', (req, res) => {
 // Protocol (JSON over WebSocket):
 //
 //   CLIENT → SERVER
-//   { "type": "input",  "data": "ls -la\n" }       keyboard input
-//   { "type": "resize", "cols": 120, "rows": 30 }   terminal resize
+//   { "type": "input",  "data": "ls -la\n" }                    keyboard input
+//   { "type": "resize", "cols": 120, "rows": 30 }               terminal resize
+//   { "type": "seed",   "filename": "main.py", "content": "…" } write file into sandbox home
 //
 //   SERVER → CLIENT
 //   { "type": "ready",  "sessionId": "a1b2c3d4" }   sandbox ready
@@ -55,6 +56,7 @@ app.ws('/terminal', async (ws, req) => {
         }
         if (msg.type === 'input')  session.write(msg.data);
         if (msg.type === 'resize') session.resize(msg.cols, msg.rows);
+        if (msg.type === 'seed')   session.seedFile(msg.filename, msg.content);
     });
 
     ws.on('close', () => {
