@@ -86,6 +86,7 @@ services:
             SANDBOX_IMAGE: piston-sandbox:latest
             IDLE_TIMEOUT_MS: "300000"
             MAX_LIFETIME_MS: "1800000"
+            MAX_SESSIONS: "200"
             PORT: "3000"
         networks:
             - piston-net

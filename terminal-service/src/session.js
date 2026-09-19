@@ -4,9 +4,10 @@ const pty              = require('node-pty');
 const { execSync, exec, spawn } = require('child_process');
 const { randomBytes }  = require('crypto');
 
-const SANDBOX_IMAGE = process.env.SANDBOX_IMAGE || 'piston-sandbox:latest';
+const SANDBOX_IMAGE = process.env.SANDBOX_IMAGE  || 'piston-sandbox:latest';
 const IDLE_MS       = parseInt(process.env.IDLE_TIMEOUT_MS  || '300000');   // 5 min
 const MAX_MS        = parseInt(process.env.MAX_LIFETIME_MS  || '1800000');  // 30 min
+const MAX_SESSIONS  = parseInt(process.env.MAX_SESSIONS     || '200');      // hard container cap
 
 const activeSessions = new Map();
 
@@ -86,12 +87,11 @@ class Session {
 
         this._pty.onExit(({ exitCode, signal }) => {
             if (this.dead) return;
-            this.dead = true;  // set early — prevents double-destroy if close triggers synchronously
             if (this.ws.readyState === 1) {
                 this.ws.send(JSON.stringify({ type: 'exit', code: exitCode, signal: signal || null }));
                 this.ws.close();
             }
-            this._cleanup();
+            this._cleanup();  // _cleanup sets this.dead = true — must not pre-set it here
         });
 
         this._startTimers();
@@ -109,7 +109,9 @@ class Session {
 
     resize(cols, rows) {
         if (this.dead || !this._pty) return;
-        try { this._pty.resize(Number(cols) || 80, Number(rows) || 24); } catch (_) {}
+        const c = Math.max(10, Math.min(Number(cols) || 80, 512));
+        const r = Math.max(5,  Math.min(Number(rows) || 24, 256));
+        try { this._pty.resize(c, r); } catch (_) {}
     }
 
     seedFile(filename, content) {
@@ -158,12 +160,17 @@ class Session {
     }
 
     _cleanup() {
-        if (this.dead) return;
+        // Always set dead first so any re-entrant path (ws close, timer, etc.) bails early
         this.dead = true;
         clearTimeout(this._maxTimer);
         clearInterval(this._idleInterval);
-        try { this._pty?.kill(); } catch (_) {}
-        exec(`docker rm -f ${this.containerName} 2>/dev/null`);  // async — never blocks event loop
+        if (this._pty) {
+            try { this._pty.kill(); } catch (_) {}
+            this._pty = null;  // null out so a second _cleanup() call is a true no-op for pty
+        }
+        if (this.containerName) {
+            exec(`docker rm -f ${this.containerName} 2>/dev/null`);  // async, idempotent
+        }
         activeSessions.delete(this.id);
         console.log(`[session ${this.id}] cleaned up`);
     }
@@ -184,6 +191,9 @@ class Session {
 }
 
 async function createSession(ws) {
+    if (activeSessions.size >= MAX_SESSIONS) {
+        throw new Error(`Server at capacity (${MAX_SESSIONS} sessions). Try again shortly.`);
+    }
     const session = new Session(ws);
     await session.start();
     return session;

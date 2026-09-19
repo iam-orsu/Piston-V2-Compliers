@@ -49,6 +49,8 @@ app.ws('/terminal', async (ws, req) => {
 
     ws.on('message', (raw) => {
         if (!session || session.dead) return;
+        // Reject oversized frames before parsing — prevents JSON.parse on huge buffers
+        if (raw.length > 200 * 1024) return;  // 200 KB max per message
         let msg;
         try { msg = JSON.parse(raw); } catch (_) {
             session.write(String(raw));
