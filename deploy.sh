@@ -33,6 +33,71 @@ banner() {
     echo ""
 }
 
+# Default runtimes to auto-install on first start
+DEFAULT_RUNTIMES=(python javascript typescript java c++ go rust bash)
+
+# ── Helpers ────────────────────────────────────────────────────────────────
+
+# Wait for the Piston API to be ready (up to 30s)
+wait_for_api() {
+    echo -e "${YELLOW}⏳  Waiting for Piston API to be ready...${NC}"
+    for i in $(seq 1 30); do
+        if curl -sf http://localhost:2000/api/v2/runtimes > /dev/null 2>&1; then
+            echo -e "${GREEN}✅  API is ready.${NC}"
+            return 0
+        fi
+        sleep 1
+    done
+    echo -e "${RED}⚠️  API did not become ready in time. Check: ./deploy.sh logs api${NC}"
+    return 1
+}
+
+# Ensure CLI node_modules are installed
+ensure_cli_deps() {
+    if [ ! -d "cli/node_modules" ]; then
+        echo -e "${YELLOW}📦  Installing CLI dependencies...${NC}"
+        (cd cli && npm install --silent)
+    fi
+}
+
+# Install a single runtime, skip if already installed
+install_runtime() {
+    local lang="$1"
+    local already
+    already=$(curl -sf http://localhost:2000/api/v2/runtimes 2>/dev/null | grep -o "\"language\":\"${lang}\"" || true)
+    if [ -n "$already" ]; then
+        echo -e "   ${BLUE}↷  ${lang} already installed, skipping.${NC}"
+        return
+    fi
+    echo -e "   ${YELLOW}⬇  Installing ${BOLD}${lang}${NC}${YELLOW}...${NC}"
+    node cli/index.js ppman install "$lang" 2>&1 | tail -1
+}
+
+# Auto-install all default runtimes if none are present
+auto_install_runtimes() {
+    ensure_cli_deps
+
+    local count
+    count=$(curl -sf http://localhost:2000/api/v2/runtimes 2>/dev/null | grep -o '"language"' | wc -l || echo 0)
+
+    if [ "$count" -gt 0 ]; then
+        echo -e "${GREEN}✅  Runtimes already installed (${count} found), skipping auto-install.${NC}"
+        return
+    fi
+
+    echo ""
+    echo -e "${CYAN}${BOLD}🚀  First run — auto-installing default language runtimes...${NC}"
+    echo -e "${YELLOW}   This may take a few minutes depending on your internet speed.${NC}"
+    echo ""
+
+    for lang in "${DEFAULT_RUNTIMES[@]}"; do
+        install_runtime "$lang"
+    done
+
+    echo ""
+    echo -e "${GREEN}${BOLD}✅  All default runtimes installed!${NC}"
+}
+
 # ── Commands ───────────────────────────────────────────────────────────────
 
 cmd_start() {
@@ -45,15 +110,16 @@ cmd_start() {
 
     $COMPOSE up -d --build
 
+    # Wait for API then auto-install runtimes
+    if wait_for_api; then
+        auto_install_runtimes
+    fi
+
     echo ""
-    echo -e "${GREEN}${BOLD}✅  Piston IDE is running!${NC}"
+    echo -e "${GREEN}${BOLD}✅  Piston IDE is ready!${NC}"
     echo ""
     echo -e "   ${BOLD}📝 Code Editor UI${NC}  →  ${CYAN}http://localhost:8080${NC}"
     echo -e "   ${BOLD}🔌 Piston API${NC}      →  ${CYAN}http://localhost:2000${NC}"
-    echo ""
-    echo -e "${YELLOW}   No runtimes yet? Install one:${NC}"
-    echo -e "   ${BOLD}./deploy.sh install python${NC}"
-    echo -e "   ${BOLD}./deploy.sh install javascript${NC}"
     echo ""
 }
 
