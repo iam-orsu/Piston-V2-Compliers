@@ -120,6 +120,7 @@ class Session {
     seedFile(filename, content) {
         if (this.dead) return;
         // Only allow safe filenames (e.g. main.py, Main.java, main.ts)
+        if (typeof filename !== 'string') return;
         if (!/^[a-zA-Z][a-zA-Z0-9_.\-]*$/.test(filename)) return;
         if (typeof content !== 'string' || content.length > 65536) return;
         const prevFile = (this._seededFile !== filename) ? this._seededFile : null;
@@ -172,7 +173,8 @@ class Session {
             this._pty = null;  // null out so a second _cleanup() call is a true no-op for pty
         }
         if (this.containerName) {
-            exec(`docker rm -f ${this.containerName} 2>/dev/null`);  // async, idempotent
+            // No-op callback suppresses unhandled 'error' events that would crash the process
+            exec(`docker rm -f ${this.containerName} 2>/dev/null`, () => {});
         }
         activeSessions.delete(this.id);
         console.log(`[session ${this.id}] cleaned up`);

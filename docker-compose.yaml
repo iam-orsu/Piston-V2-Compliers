@@ -23,7 +23,7 @@ services:
         <<: *api-base
         container_name: piston_api_1
         ports:
-            - "2000:2000"
+            - "127.0.0.1:2000:2000"
         environment:
             PISTON_RUNNER_UID_MIN: "1001"
             PISTON_RUNNER_UID_MAX: "1500"
