@@ -1,8 +1,8 @@
 'use strict';
 
-const pty        = require('node-pty');
-const { execSync } = require('child_process');
-const { randomBytes } = require('crypto');
+const pty              = require('node-pty');
+const { execSync, exec } = require('child_process');
+const { randomBytes }  = require('crypto');
 
 const SANDBOX_IMAGE = process.env.SANDBOX_IMAGE || 'piston-sandbox:latest';
 const IDLE_MS       = parseInt(process.env.IDLE_TIMEOUT_MS  || '300000');   // 5 min
@@ -25,7 +25,7 @@ class Session {
     async start() {
         // All security constraints applied here — students can't change these
         const dockerArgs = [
-            'run', '--rm', '-i',
+            'run', '--rm', '-it',
             '--name',         this.containerName,
             '--hostname',     'sandbox',
 
@@ -84,7 +84,9 @@ class Session {
         });
 
         this._pty.onExit(({ exitCode, signal }) => {
-            if (!this.dead && this.ws.readyState === 1) {
+            if (this.dead) return;
+            this.dead = true;  // set early — prevents double-destroy if close triggers synchronously
+            if (this.ws.readyState === 1) {
                 this.ws.send(JSON.stringify({ type: 'exit', code: exitCode, signal: signal || null }));
                 this.ws.close();
             }
@@ -125,7 +127,7 @@ class Session {
         clearTimeout(this._maxTimer);
         clearInterval(this._idleInterval);
         try { this._pty?.kill(); } catch (_) {}
-        try { execSync(`docker rm -f ${this.containerName} 2>/dev/null`); } catch (_) {}
+        exec(`docker rm -f ${this.containerName} 2>/dev/null`);  // async — never blocks event loop
         activeSessions.delete(this.id);
         console.log(`[session ${this.id}] cleaned up`);
     }

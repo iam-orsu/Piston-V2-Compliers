@@ -195,7 +195,6 @@ build_sandbox_image() {
     echo -e "${CYAN}${BOLD}🔒  Building hardened sandbox image...${NC}"
     docker build -t piston-sandbox:latest "$SCRIPT_DIR/sandbox" \
         --label "piston.role=sandbox" \
-        --quiet \
     && echo -e "${GREEN}✅  piston-sandbox image ready.${NC}" \
     || { warn "Sandbox image build failed — terminal shell tab will not work"; }
 }
@@ -275,6 +274,14 @@ print_ready_banner() {
 cmd_stop() {
     check_docker
     log "Stopping Piston IDE..."
+    # Kill any lingering student sandbox containers first
+    local orphans
+    orphans=$(docker ps -q --filter "name=student-" 2>/dev/null || true)
+    if [[ -n "$orphans" ]]; then
+        echo -e "   ${YELLOW}⚡  Removing student sandbox containers...${NC}"
+        # shellcheck disable=SC2086
+        docker rm -f $orphans 2>/dev/null || true
+    fi
     $DC down --remove-orphans
     echo -e "${GREEN}✅  All containers stopped.${NC}"
 }
