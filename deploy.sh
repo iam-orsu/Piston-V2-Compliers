@@ -188,26 +188,6 @@ auto_install_runtimes() {
     else
         echo -e "${GREEN}${BOLD}✅  All default runtimes already installed.${NC}"
     fi
-
-    patch_runtimes
-}
-
-# Patch Piston run scripts so C programs print prompts BEFORE blocking on input.
-# Without this, printf("Enter name: ") buffers until after scanf() — because Piston
-# pipes stdin/stdout (not a PTY), causing full buffering instead of line buffering.
-patch_runtimes() {
-    local gcc_run
-    gcc_run=$(docker exec piston_api_1 find /piston/packages/gcc -name "run" -maxdepth 3 2>/dev/null | head -1)
-    if [[ -n "$gcc_run" ]]; then
-        if ! docker exec piston_api_1 grep -q "stdbuf" "$gcc_run" 2>/dev/null; then
-            docker exec piston_api_1 bash -c "
-                sed -i 's|^\./a\.out|stdbuf -o0 ./a.out|' \"$gcc_run\"
-            " 2>/dev/null && step "Patched C runtime for unbuffered stdout." \
-                          || warn "Could not patch C runtime — prompts may appear after input"
-        else
-            step "C runtime already patched."
-        fi
-    fi
 }
 
 # ── Commands ─────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Put instructions to run the runtime
-
+# stdbuf -o0: force unbuffered stdout so printf() prompts appear before scanf() blocks.
+# Piston pipes stdin/stdout (not a PTY), so glibc uses full buffering by default.
 shift # Discard main filename
-./a.out "$@"
+stdbuf -o0 ./a.out "$@"
