@@ -534,6 +534,7 @@ function initTerminal() {
         scrollback: 5000,
         disableStdin: false,
         allowProposedApi: true,
+        convertEol: true,
     });
 
     fitAddon = new FitAddon.FitAddon();
@@ -707,6 +708,7 @@ async function runCode() {
     setRunning(true);
     termClear();
     showTab('terminal');
+    term.focus();
 
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl   = `${wsProto}//${location.host}/api/v2/connect`;
@@ -746,6 +748,7 @@ async function runCode() {
                         termWriteLn('\x1b[33m[compiling...]\x1b[0m');
                     } else if (msg.stage === 'run') {
                         termWriteLn('\x1b[32m[running — type below to send input]\x1b[0m');
+                        term.focus();
                     }
                     break;
 
