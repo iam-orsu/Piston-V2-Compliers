@@ -206,7 +206,7 @@ cmd_start() {
     fi
 
     log "Building and starting containers..."
-    $DC up -d --build
+    $DC up -d --build --remove-orphans
 
     if wait_for_api; then
         auto_install_runtimes
@@ -234,14 +234,14 @@ cmd_start() {
 cmd_stop() {
     check_docker
     log "Stopping Piston IDE..."
-    $DC down
+    $DC down --remove-orphans
     echo -e "${GREEN}✅  All containers stopped.${NC}"
 }
 
 cmd_restart() {
     check_docker
     log "Rebuilding and restarting (applying changes)..."
-    $DC up -d --build
+    $DC up -d --build --remove-orphans
     wait_for_api
     echo ""
     echo -e "${GREEN}${BOLD}✅  Restarted!${NC}"
