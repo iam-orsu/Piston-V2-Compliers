@@ -1,9 +1,16 @@
 x-api-base: &api-base
     build:
         context: ./api
-        dockerfile: Dockerfile.fix
+        dockerfile: Dockerfile          # Use the fully-patched main Dockerfile (Node 20, all security fixes)
     restart: always
-    privileged: true
+    # C7: Dropped blanket privileged:true — replaced with targeted Linux capabilities
+    # isolate needs SYS_ADMIN for mount namespaces and cgroup subtree management.
+    cap_add:
+        - SYS_ADMIN
+        - NET_ADMIN
+    security_opt:
+        - seccomp=unconfined            # isolate manages its own seccomp internally
+        - apparmor=unconfined           # isolate manages its own AppArmor internally
     volumes:
         - piston-packages:/piston/packages
     tmpfs:
@@ -86,9 +93,9 @@ services:
             SANDBOX_IMAGE: piston-sandbox:latest
             IDLE_TIMEOUT_MS: "300000"
             MAX_LIFETIME_MS: "1800000"
-            MAX_SESSIONS: "200"
+            MAX_SESSIONS: "500"          # Scaled from 200 → 500 for 128 GB RAM host
             PORT: "3000"
-        mem_limit: 1g
+        mem_limit: 4g                    # Scaled from 1g → 4g to safely manage 500 WS PTY streams
         networks:
             - piston-net
         healthcheck:

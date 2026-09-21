@@ -353,7 +353,7 @@ router.get('/runtimes', (req, res) => {
     return res.status(200).send(runtimes);
 });
 
-// H2: Rate limit package management — 10 requests per minute per IP
+// Rate limit read-only package listing
 router.get('/packages', make_limiter(30, 60 * 1000), async (req, res) => {
     logger.debug('Request to list packages');
     let packages = await package.get_package_list();
@@ -369,81 +369,16 @@ router.get('/packages', make_limiter(30, 60 * 1000), async (req, res) => {
     return res.status(200).send(packages);
 });
 
-// H3: Package install/uninstall — rate limited; in production gate with API key via env
-const pkg_admin_limiter = make_limiter(10, 60 * 1000);
-
-router.post('/packages', pkg_admin_limiter, async (req, res) => {
-    logger.debug('Request to install package');
-
-    // H3: Optional API key auth — set PISTON_API_KEY env var to enable
-    if (process.env.PISTON_API_KEY) {
-        const provided = req.headers['x-piston-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
-        if (provided !== process.env.PISTON_API_KEY) {
-            return res.status(401).send({ message: 'Unauthorized' });
-        }
-    }
-
-    const { language, version } = req.body;
-
-    const pkg = await package.get_package(language, version);
-
-    if (pkg == null) {
-        return res.status(404).send({
-            message: `Requested package ${language}-${version} does not exist`,
-        });
-    }
-
-    try {
-        const response = await pkg.install();
-
-        return res.status(200).send(response);
-    } catch (e) {
-        logger.error(
-            `Error while installing package ${pkg.language}-${pkg.version}:`,
-            e?.message ?? String(e)
-        );
-
-        return res.status(500).send({
-            message: e?.message ?? String(e),
-        });
-    }
+// Dynamic package install/uninstall are permanently disabled.
+// This deployment is air-gapped: all runtimes are pre-baked onto the volume.
+// These endpoints are hard-blocked so no client can trigger remote downloads
+// or shell evaluation (source environment) under any circumstances.
+router.post('/packages', (req, res) => {
+    return res.status(403).send({ message: 'Package installation is disabled on this instance.' });
 });
 
-router.delete('/packages', pkg_admin_limiter, async (req, res) => {
-    logger.debug('Request to uninstall package');
-
-    // H3: Optional API key auth
-    if (process.env.PISTON_API_KEY) {
-        const provided = req.headers['x-piston-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
-        if (provided !== process.env.PISTON_API_KEY) {
-            return res.status(401).send({ message: 'Unauthorized' });
-        }
-    }
-
-    const { language, version } = req.body;
-
-    const pkg = await package.get_package(language, version);
-
-    if (pkg == null) {
-        return res.status(404).send({
-            message: `Requested package ${language}-${version} does not exist`,
-        });
-    }
-
-    try {
-        const response = await pkg.uninstall();
-
-        return res.status(200).send(response);
-    } catch (e) {
-        logger.error(
-            `Error while uninstalling package ${pkg.language}-${pkg.version}:`,
-            e?.message ?? String(e)
-        );
-
-        return res.status(500).send({
-            message: e?.message ?? String(e),
-        });
-    }
+router.delete('/packages', (req, res) => {
+    return res.status(403).send({ message: 'Package removal is disabled on this instance.' });
 });
 
 module.exports = router;
