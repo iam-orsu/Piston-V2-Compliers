@@ -152,7 +152,7 @@ class Job {
                 recursive: true,
                 mode: 0o700,
             });
-            await fs.write_file(file_path, file_content);
+            await fs.writeFile(file_path, file_content);
         }
 
         this.state = job_states.PRIMED;
@@ -298,7 +298,7 @@ class Job {
 
         try {
             const metadata_str = (
-                await fs.read_file(box.metadata_file_path)
+                await fs.readFile(box.metadata_file_path)
             ).toString();
             const metadata_lines = metadata_str.split('\n');
             for (const line of metadata_lines) {
