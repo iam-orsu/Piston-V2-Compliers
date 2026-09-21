@@ -37,6 +37,7 @@ COPY ["package.json", "package-lock.json", "./"]
 COPY vendor ./vendor
 RUN npm install
 COPY ./src ./src
+RUN chmod +x /piston_api/src/docker-entrypoint.sh
 
 CMD ["/piston_api/src/docker-entrypoint.sh"]
 EXPOSE 2000/tcp
