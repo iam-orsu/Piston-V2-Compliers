@@ -135,6 +135,38 @@ class Package {
             await exec_promise(build_script, { cwd: this.install_path });
         }
 
+        // Generate .env from the 'environment' bash script so runtime.js can
+        // read PATH/LD_LIBRARY_PATH without shelling out at execution time.
+        // We source with cwd=install_path so $PWD resolves to the package dir.
+        const env_script_path = path.join(this.install_path, 'environment');
+        if (fss.existsSync(env_script_path)) {
+            try {
+                const to_map = s => {
+                    const m = new Map();
+                    s.split('\n').filter(Boolean).forEach(line => {
+                        const idx = line.indexOf('=');
+                        if (idx > 0) m.set(line.slice(0, idx), line.slice(idx + 1));
+                    });
+                    return m;
+                };
+                const base = to_map(await exec_promise('env'));
+                const sourced = to_map(
+                    await exec_promise(`bash -c 'source ./environment 2>/dev/null; env'`,
+                        { cwd: this.install_path })
+                );
+                const env_lines = [];
+                for (const [k, v] of sourced) {
+                    if (base.get(k) !== v) env_lines.push(`${k}=${v}`);
+                }
+                if (env_lines.length > 0) {
+                    await fs.writeFile(
+                        path.join(this.install_path, '.env'),
+                        env_lines.join('\n') + '\n'
+                    );
+                }
+            } catch (_) { /* skip if environment script can't be sourced */ }
+        }
+
         // Mark as installed
         await fs.writeFile(path.join(this.install_path, globals.pkg_installed_file), '');
 

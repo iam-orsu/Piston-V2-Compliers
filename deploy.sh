@@ -34,7 +34,18 @@ else
     exit 1
 fi
 
-DEFAULT_RUNTIMES=(python node typescript java gcc go rust bash)
+# Pinned to exact versions known to work on Debian Bookworm.
+# Format: language=version  (used by auto_install_runtimes and install_runtime)
+DEFAULT_RUNTIMES=(
+    "python=3.12.0"
+    "node=20.11.1"
+    "typescript=5.0.3"
+    "java=15.0.2"
+    "gcc=10.2.0"
+    "go=1.16.2"
+    "rust=1.68.2"
+    "bash=5.2.0"
+)
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 log()  { echo -e "${GREEN}▶  ${NC}$*"; }
@@ -180,14 +191,23 @@ install_runtime() {
         return 0
     fi
 
-    # If no version given, find the latest from the remote package index.
+    # If no version given, look up the latest from the remote package index.
     # Index format (CSV): language,version,sha256,url
+    # Use semver sort to pick the highest version (not alphabetical tail).
     if [[ -z "$ver" ]]; then
         ver=$(curl -sfL 'https://github.com/engineer-man/piston/releases/download/pkgs/index' \
             2>/dev/null \
             | grep "^${lang}," \
-            | tail -1 \
-            | cut -d',' -f2)
+            | cut -d',' -f2 \
+            | python3 -c "
+import sys, re
+vers = [l.strip() for l in sys.stdin if l.strip()]
+def semver_key(v):
+    parts = re.split(r'[.\-]', v)
+    return [int(p) if p.isdigit() else p for p in parts]
+if vers:
+    print(sorted(vers, key=semver_key)[-1])
+" 2>/dev/null || echo "")
         if [[ -z "$ver" ]]; then
             warn "Could not find $lang in the package registry — try: ./deploy.sh install $lang <version>"
             return 1
@@ -217,23 +237,21 @@ auto_install_runtimes() {
     local runtimes_json
     runtimes_json=$(curl -sf http://localhost:2000/api/v2/runtimes 2>/dev/null || echo "[]")
 
-    local missing=()
-    for lang in "${DEFAULT_RUNTIMES[@]}"; do
+    local missing_langs=()
+    local missing_vers=()
+    for entry in "${DEFAULT_RUNTIMES[@]}"; do
+        local lang ver
+        lang="${entry%%=*}"
+        ver="${entry##*=}"
         if echo "$runtimes_json" | grep -q "\"language\":\"${lang}\""; then
-            local ver
-            ver=$(echo "$runtimes_json" | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-match = next((r for r in data if r['language'] == '${lang}'), None)
-print(match['version'] if match else '')
-" 2>/dev/null || echo "")
             step "${lang}  ${ver}"
         else
-            missing+=("$lang")
+            missing_langs+=("$lang")
+            missing_vers+=("$ver")
         fi
     done
 
-    if [[ ${#missing[@]} -eq 0 ]]; then
+    if [[ ${#missing_langs[@]} -eq 0 ]]; then
         echo ""
         echo -e "${GREEN}${BOLD}✅  All default runtimes are present.${NC}"
         return 0
@@ -241,9 +259,23 @@ print(match['version'] if match else '')
 
     echo ""
     echo -e "${CYAN}  Installing missing runtimes (this may take a few minutes)...${NC}"
-    for lang in "${missing[@]}"; do
-        install_runtime "$lang"
+    local installed_count=0
+    for i in "${!missing_langs[@]}"; do
+        if install_runtime "${missing_langs[$i]}" "${missing_vers[$i]}"; then
+            installed_count=$((installed_count + 1))
+        fi
     done
+
+    # Runtimes are loaded into memory at container startup.
+    # After installing packages we must restart the API replicas so they
+    # re-scan the packages directory and register the new languages.
+    if [[ $installed_count -gt 0 ]]; then
+        echo ""
+        echo -e "${CYAN}  Restarting API replicas to load new runtimes...${NC}"
+        $DC restart api1 api2 api3 2>/dev/null || true
+        wait_for_api
+    fi
+
     echo ""
     echo -e "${GREEN}${BOLD}✅  Runtime installation complete.${NC}"
 }

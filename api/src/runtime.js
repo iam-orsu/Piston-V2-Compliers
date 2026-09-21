@@ -4,6 +4,7 @@ const config = require('./config');
 const globals = require('./globals');
 const fss = require('fs');
 const path = require('path');
+const cp = require('child_process');
 
 const runtimes = [];
 
@@ -176,13 +177,37 @@ class Runtime {
     get env_vars() {
         if (!this._env_vars) {
             const env_file = path.join(this.pkgdir, '.env');
-            // H2: Guard against missing .env file — return an empty list rather
-            // than throwing synchronously inside safe_call() mid-execution.
+            const env_script = path.join(this.pkgdir, 'environment');
+
             try {
                 const env_content = fss.read_file_sync(env_file).toString();
                 this._env_vars = env_content.trim().split('\n').filter(Boolean);
             } catch (_) {
-                this._env_vars = [];
+                // No .env file — source the 'environment' bash script (Piston packages
+                // use this to set PATH/$PWD-relative vars like PATH=$PWD/bin:$PATH).
+                // We diff before/after so we only capture what the script actually changes.
+                try {
+                    const to_map = s => {
+                        const m = new Map();
+                        s.split('\n').filter(Boolean).forEach(line => {
+                            const idx = line.indexOf('=');
+                            if (idx > 0) m.set(line.slice(0, idx), line.slice(idx + 1));
+                        });
+                        return m;
+                    };
+                    const base = to_map(cp.execSync('env', { timeout: 3000 }).toString());
+                    const sourced = to_map(
+                        cp.execSync(`bash -c 'source ./environment 2>/dev/null; env'`,
+                            { cwd: this.pkgdir, timeout: 3000 }).toString()
+                    );
+                    const diff = [];
+                    for (const [k, v] of sourced) {
+                        if (base.get(k) !== v) diff.push(`${k}=${v}`);
+                    }
+                    this._env_vars = diff;
+                } catch (_2) {
+                    this._env_vars = [];
+                }
             }
         }
 
