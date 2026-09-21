@@ -15,11 +15,13 @@ RUN apk add --no-cache netcat-openbsd
 
 # Copy vendored client-side libraries into the webroot under /vendor/.
 # The frontend's index.html references these paths instead of cdn.jsdelivr.net.
-COPY --from=vendor-js /vendor/node_modules/xterm/css/xterm.css          /usr/share/nginx/html/vendor/xterm.css
-COPY --from=vendor-js /vendor/node_modules/xterm/lib/xterm.js            /usr/share/nginx/html/vendor/xterm.js
-COPY --from=vendor-js /vendor/node_modules/xterm-addon-fit/lib/xterm-addon-fit.js \
-                                                                          /usr/share/nginx/html/vendor/xterm-addon-fit.js
-COPY --from=vendor-js /vendor/node_modules/monaco-editor/min/vs          /usr/share/nginx/html/vendor/vs
+# Vendor assets go to /usr/share/nginx/vendor/ — NOT inside html/.
+# The html/ directory is bind-mounted from ./frontend at runtime, which would
+# mask anything baked into html/vendor/ and cause 404s for all /vendor/* paths.
+COPY --from=vendor-js /vendor/node_modules/xterm/css/xterm.css                   /usr/share/nginx/vendor/xterm.css
+COPY --from=vendor-js /vendor/node_modules/xterm/lib/xterm.js                    /usr/share/nginx/vendor/xterm.js
+COPY --from=vendor-js /vendor/node_modules/xterm-addon-fit/lib/xterm-addon-fit.js /usr/share/nginx/vendor/xterm-addon-fit.js
+COPY --from=vendor-js /vendor/node_modules/monaco-editor/min/vs                  /usr/share/nginx/vendor/vs
 
 COPY wait-for-backends.sh /wait-for-backends.sh
 COPY nginx.conf /etc/nginx/conf.d/default.conf
