@@ -203,16 +203,75 @@ The file appears instantly in the student's shell at `/home/sandbox/Solution.jav
 
 **Re-seeding:** You can send another `seed` message at any time to update the file as the student edits in the browser. Send it on every editor change or on a debounce.
 
-**Typical integration pattern:**
+---
+
+### Seeding Nested Folders and Directory Structures
+
+Both the compiler and the terminal fully support subdirectory paths. You are not limited to flat files in the root.
+
+**Compiler (`POST /api/v2/execute` and `WS /api/v2/connect`):**
+
+Pass the relative path including folders in the `name` field. Parent directories are created automatically.
+
+```json
+{
+  "language": "python",
+  "version": "3.12.0",
+  "files": [
+    { "name": "src/models/user.py",  "content": "class User: pass" },
+    { "name": "src/utils/helper.py", "content": "def greet(): print('hi')" },
+    { "name": "tests/test_main.py",  "content": "from src.models.user import User" },
+    { "name": "data/input.txt",      "content": "42\n" }
+  ]
+}
+```
+
+The first file in the array is treated as the entry point.
+
+**Terminal (`WS ws://<SERVER_IP>:8080/terminal`):**
+
+Send one `seed` message per file. Each file is written into the student's sandbox at `/home/sandbox/<filename>`. Parent directories are created automatically with `mkdir -p`.
+
+```json
+{ "type": "seed", "filename": "src/models/user.py",  "content": "class User: pass" }
+{ "type": "seed", "filename": "tests/test_main.py",  "content": "import unittest" }
+{ "type": "seed", "filename": "data/input.txt",      "content": "42\n" }
+```
+
+After seeding, the student's shell will have:
+```
+/home/sandbox/
+  src/
+    models/
+      user.py
+  tests/
+    test_main.py
+  data/
+    input.txt
+```
+
+**Filename rules for nested paths:**
+- Use forward slashes only: `src/models/user.py`
+- Each component must start with a letter or number
+- Allowed characters per component: letters, numbers, underscores, dots, hyphens
+- No `..` or `.` components — these are blocked to prevent escaping the sandbox
+- No leading slash, no double slashes, no trailing slash
+- Examples that work: `src/main.py`, `com/example/Main.java`, `data/input/test_1.txt`
+- Examples that are blocked: `../escape.py`, `/etc/passwd`, `a//b.py`
+
+**Typical integration pattern for a problem with multiple files:**
 ```js
 ws.onmessage = (event) => {
   const msg = JSON.parse(event.data)
   if (msg.type === 'ready') {
-    ws.send(JSON.stringify({
-      type: 'seed',
-      filename: problem.filename,   // from your problem database
-      content:  problem.boilerplate // starter code
-    }))
+    // Seed every file from your problem database
+    for (const file of problem.files) {
+      ws.send(JSON.stringify({
+        type:     'seed',
+        filename: file.path,    // e.g. "src/Solution.java"
+        content:  file.content  // starter boilerplate
+      }))
+    }
   }
 }
 ```
