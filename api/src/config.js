@@ -114,12 +114,6 @@ const options = {
         parser: parse_int,
         validators: [(x, raw) => !is_nan(x) || `${raw} is not a number`],
     },
-    repo_url: {
-        desc: 'URL of repo index',
-        default:
-            'https://github.com/engineer-man/piston/releases/download/pkgs/index',
-        validators: [],
-    },
     max_concurrent_jobs: {
         desc: 'Maximum number of concurrent jobs to run at one time',
         default: 256, // H10: raised from 64 to utilise 96-vCPU hardware; safe with 256MB memory limits

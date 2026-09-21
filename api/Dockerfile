@@ -1,10 +1,14 @@
 FROM buildpack-deps:buster AS isolate
+# buildpack-deps already includes curl — no git required.
+# The tarball is pinned to the exact commit hash so the build is fully reproducible.
+# This is a build-time-only download; the running container makes no outbound calls.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git libcap-dev && \
+    apt-get install -y --no-install-recommends libcap-dev && \
     rm -rf /var/lib/apt/lists/* && \
-    git clone https://github.com/envicutor/isolate.git /tmp/isolate/ && \
+    mkdir -p /tmp/isolate && \
+    curl -fsSL "https://github.com/envicutor/isolate/archive/af6db68042c3aa0ded80787fbb78bc0846ea2114.tar.gz" \
+        | tar xz --strip-components=1 -C /tmp/isolate && \
     cd /tmp/isolate && \
-    git checkout af6db68042c3aa0ded80787fbb78bc0846ea2114 && \
     make -j$(nproc) install && \
     rm -rf /tmp/*
 

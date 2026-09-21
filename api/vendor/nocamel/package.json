@@ -1,0 +1,7 @@
+{
+    "name": "nocamel",
+    "version": "1.0.2",
+    "description": "Vendored offline copy — snake_case aliases for Node built-ins",
+    "main": "index.js",
+    "license": "ISC"
+}
