@@ -196,9 +196,11 @@ After connecting, wait for the server to send the `ready` event, then immediatel
 The file appears instantly in the student's shell at `/home/sandbox/Solution.java`. The student can run `cat Solution.java`, compile it, or edit it.
 
 **Rules for the filename field:**
-- Must start with a letter: `a-z` or `A-Z`
-- Can contain letters, numbers, underscores, dots, hyphens: `Solution.java`, `main_v2.py`, `index-1.js`
-- No spaces, no slashes, no special characters
+- Must start with a letter or number: `a-z`, `A-Z`, or `0-9`
+- Can contain letters, numbers, underscores, dots, hyphens, and forward slashes for nested paths: `Solution.java`, `main_v2.py`, `src/models/user.py`
+- No spaces, backslashes, or other special characters
+- No `..` or `.` path components — blocked to prevent sandbox escapes
+- No leading slash, no double slashes, no trailing slash
 - Max length is not enforced but keep it sane
 
 **Re-seeding:** You can send another `seed` message at any time to update the file as the student edits in the browser. Send it on every editor change or on a debounce.
