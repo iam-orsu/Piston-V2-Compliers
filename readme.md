@@ -132,6 +132,93 @@ Sessions are killed automatically after 5 minutes of inactivity or 30 minutes to
 
 ---
 
+## Pre-seeding Custom Files and Starter Code (Dev Guide)
+
+This section explains how to dynamically load any file, starter code, or problem boilerplate from your database into both the compiler and the live terminal. No backend changes are needed. The backend accepts any filename and any content on every endpoint.
+
+---
+
+### Seeding Files into the Compiler
+
+Applies to both:
+- `POST http://<SERVER_IP>:8080/api/v2/execute`
+- `WS ws://<SERVER_IP>:8080/api/v2/connect` (inside the `init` message)
+
+Pass your files in the `files` array. The `name` field is the filename. The `content` field is the full source code as a string. There are no restrictions on filenames.
+
+**Single file:**
+```json
+{
+  "language": "python",
+  "version": "3.12.0",
+  "files": [
+    { "name": "solution.py", "content": "# your starter code here\nprint('hello')" }
+  ]
+}
+```
+
+**Multiple files (e.g. Java with a helper class):**
+```json
+{
+  "language": "java",
+  "version": "15.0.2",
+  "files": [
+    { "name": "Solution.java", "content": "public class Solution { public static void main(String[] args) { Helper.run(); } }" },
+    { "name": "Helper.java",   "content": "public class Helper { public static void run() { System.out.println(\"hi\"); } }" }
+  ]
+}
+```
+
+The runtime uses the first file as the entry point. Pass files in the order you want them compiled.
+
+---
+
+### Seeding Files into the Live Terminal Shell
+
+**Endpoint:** `WS ws://<SERVER_IP>:8080/terminal`
+
+After connecting, wait for the server to send the `ready` event, then immediately send a `seed` message. This writes your file into `/home/sandbox/<filename>` inside the student's live shell.
+
+**Step 1 - Wait for ready:**
+```json
+{ "type": "ready", "sessionId": "a1b2c3d4" }
+```
+
+**Step 2 - Send the seed immediately after:**
+```json
+{
+  "type": "seed",
+  "filename": "Solution.java",
+  "content": "public class Solution {\n  public static void main(String[] args) {\n    // starter code\n  }\n}"
+}
+```
+
+The file appears instantly in the student's shell at `/home/sandbox/Solution.java`. The student can run `cat Solution.java`, compile it, or edit it.
+
+**Rules for the filename field:**
+- Must start with a letter: `a-z` or `A-Z`
+- Can contain letters, numbers, underscores, dots, hyphens: `Solution.java`, `main_v2.py`, `index-1.js`
+- No spaces, no slashes, no special characters
+- Max length is not enforced but keep it sane
+
+**Re-seeding:** You can send another `seed` message at any time to update the file as the student edits in the browser. Send it on every editor change or on a debounce.
+
+**Typical integration pattern:**
+```js
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data)
+  if (msg.type === 'ready') {
+    ws.send(JSON.stringify({
+      type: 'seed',
+      filename: problem.filename,   // from your problem database
+      content:  problem.boilerplate // starter code
+    }))
+  }
+}
+```
+
+---
+
 ## How to Deploy a Custom UI
 
 **Option 1 - Replace the frontend folder:**
