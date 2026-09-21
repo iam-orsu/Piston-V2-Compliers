@@ -15,6 +15,20 @@ const logger = Logger.create('index');
 const app = express();
 expressWs(app);
 
+// C1: Global crash handlers — prevent a single error from killing all users' sessions
+process.on('unhandledRejection', (reason) => {
+    logger.error('Unhandled Promise Rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+    logger.error('Uncaught Exception — shutting down gracefully:', err);
+    // Give in-flight requests up to 5s to drain, then exit
+    server_ref?.close(() => process.exit(1));
+    setTimeout(() => process.exit(1), 5000).unref();
+});
+
+let server_ref = null;
+
 (async () => {
     logger.info('Setting loglevel to', config.log_level);
     Logger.setLogLevel(config.log_level);
@@ -64,14 +78,9 @@ expressWs(app);
     logger.debug('Constructing Express App');
     logger.debug('Registering middleware');
 
-    app.use(body_parser.urlencoded({ extended: true }));
-    app.use(body_parser.json());
-
-    app.use((err, req, res, next) => {
-        return res.status(400).send({
-            stack: err.stack,
-        });
-    });
+    // C5: Explicit body size limits — prevent OOM bomb via large request bodies
+    app.use(body_parser.urlencoded({ extended: true, limit: '1mb' }));
+    app.use(body_parser.json({ limit: '1mb' }));
 
     logger.debug('Registering Routes');
 
@@ -88,6 +97,12 @@ expressWs(app);
         return res.status(404).send({ message: 'Not Found' });
     });
 
+    // C6: Error handler AFTER routes, no stack leak to client
+    app.use((err, req, res, next) => {
+        logger.error('Unhandled route error:', err);
+        return res.status(500).send({ message: 'Internal Server Error' });
+    });
+
     logger.debug('Calling app.listen');
     const [address, port] = config.bind_address.split(':');
 
@@ -95,8 +110,15 @@ expressWs(app);
         logger.info('API server started on', config.bind_address);
     });
 
+    server_ref = server;
+
+    // M7: HTTP timeouts — prevent slow clients from holding connections indefinitely
+    server.setTimeout(30000);
+    server.keepAliveTimeout = 65000;
+    server.headersTimeout = 66000;
+
     process.on('SIGTERM', () => {
         server.close();
-        process.exit(0)
+        process.exit(0);
     });
 })();

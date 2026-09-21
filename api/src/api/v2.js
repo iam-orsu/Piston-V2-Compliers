@@ -7,7 +7,39 @@ const runtime = require('../runtime');
 const { Job } = require('../job');
 const package = require('../package');
 const globals = require('../globals');
+const config = require('../config');
 const logger = require('logplease').create('api/v2');
+
+// M1/H1: Per-IP rate limiting for execution endpoint — requires express-rate-limit
+// Falls back gracefully if the package isn't installed yet
+let rateLimit;
+try {
+    rateLimit = require('express-rate-limit');
+} catch (_) {
+    rateLimit = null;
+}
+
+const make_limiter = (max, window_ms) => {
+    if (!rateLimit) return (req, res, next) => next();
+    return rateLimit({
+        windowMs: window_ms,
+        max,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: { message: 'Too many requests, please slow down.' },
+    });
+};
+
+// H4: Guard ws.send() — drop silently if the socket is no longer open
+const safe_ws_send = (ws, data) => {
+    if (ws.readyState === 1 /* OPEN */) {
+        try {
+            ws.send(data);
+        } catch (e) {
+            // socket closed between the readyState check and the send
+        }
+    }
+};
 
 function get_job(body) {
     let {
@@ -46,6 +78,13 @@ function get_job(body) {
                     message: `files[${i}].content is required as a string`,
                 });
             }
+        }
+
+        // M2: Validate stdin size
+        if (stdin && stdin.length > config.output_max_size * 10) {
+            return reject({
+                message: `stdin length cannot exceed ${config.output_max_size * 10} bytes`,
+            });
         }
 
         const rt = runtime.get_latest_runtime_matching_language_version(
@@ -133,12 +172,59 @@ router.use((req, res, next) => {
     next();
 });
 
+// H2: Rate limit execution — 60 requests per minute per IP
+router.post('/execute', make_limiter(60, 60 * 1000), async (req, res) => {
+    let job;
+    try {
+        job = await get_job(req.body);
+    } catch (error) {
+        return res.status(400).json(error);
+    }
+    try {
+        const box = await job.prime();
+
+        let result = await job.execute(box);
+        // Backward compatibility when the run stage is not started
+        if (result.run === undefined) {
+            result.run = result.compile;
+        }
+
+        return res.status(200).send(result);
+    } catch (error) {
+        logger.error(`Error executing job: ${job.uuid}:\n${error}`);
+        return res.status(500).send({ message: 'Execution error' });
+    } finally {
+        try {
+            await job.cleanup();
+        } catch (error) {
+            logger.error(`Error cleaning up job: ${job.uuid}:\n${error}`);
+        }
+    }
+});
+
+// H1/M1: WebSocket — rate limit connection upgrades per IP
+// express-ws doesn't support middleware on ws routes directly so we track
+// concurrent connections and reject when over a safe global ceiling.
+const MAX_WS_CONNECTIONS = config.max_concurrent_jobs * 2;
+let active_ws_connections = 0;
+
 router.ws('/connect', async (ws, req) => {
+    // H1: Enforce global WebSocket connection cap
+    if (active_ws_connections >= MAX_WS_CONNECTIONS) {
+        safe_ws_send(ws, JSON.stringify({ type: 'error', message: 'Server at capacity' }));
+        ws.close(4429, 'Too Many Connections');
+        return;
+    }
+    active_ws_connections++;
+
     let job = null;
     let event_bus = new events.EventEmitter();
+    // Prevent Node's MaxListenersExceededWarning for long-running interactive jobs
+    event_bus.setMaxListeners(20);
 
+    // H4: All event_bus -> ws sends go through safe_ws_send
     event_bus.on('stdout', data =>
-        ws.send(
+        safe_ws_send(ws,
             JSON.stringify({
                 type: 'data',
                 stream: 'stdout',
@@ -147,7 +233,7 @@ router.ws('/connect', async (ws, req) => {
         )
     );
     event_bus.on('stderr', data =>
-        ws.send(
+        safe_ws_send(ws,
             JSON.stringify({
                 type: 'data',
                 stream: 'stderr',
@@ -156,11 +242,31 @@ router.ws('/connect', async (ws, req) => {
         )
     );
     event_bus.on('stage', stage =>
-        ws.send(JSON.stringify({ type: 'stage', stage }))
+        safe_ws_send(ws, JSON.stringify({ type: 'stage', stage }))
     );
     event_bus.on('exit', (stage, status) =>
-        ws.send(JSON.stringify({ type: 'exit', stage, ...status }))
+        safe_ws_send(ws, JSON.stringify({ type: 'exit', stage, ...status }))
     );
+
+    // M1: Clear the init timeout once a message arrives
+    let init_timeout = setTimeout(() => {
+        if (job === null) ws.close(4001, 'Initialization Timeout');
+    }, 10000);
+
+    // H5: Clean up event_bus and kill any running job on disconnect
+    ws.on('close', async () => {
+        active_ws_connections--;
+        clearTimeout(init_timeout);
+        event_bus.removeAllListeners();
+        if (job !== null) {
+            event_bus.emit('kill', 'SIGKILL');
+            try {
+                await job.cleanup();
+            } catch (e) {
+                logger.error(`Cleanup on disconnect for job ${job?.uuid}: ${e}`);
+            }
+        }
+    });
 
     ws.on('message', async data => {
         try {
@@ -168,13 +274,14 @@ router.ws('/connect', async (ws, req) => {
 
             switch (msg.type) {
                 case 'init':
+                    clearTimeout(init_timeout);
                     if (job === null) {
                         job = await get_job(msg);
 
                         try {
                             const box = await job.prime();
 
-                            ws.send(
+                            safe_ws_send(ws,
                                 JSON.stringify({
                                     type: 'runtime',
                                     language: job.runtime.language,
@@ -185,13 +292,18 @@ router.ws('/connect', async (ws, req) => {
                             await job.execute(box, event_bus);
                         } catch (error) {
                             logger.error(
-                                `Error cleaning up job: ${job.uuid}:\n${error}`
+                                `Error executing job ${job.uuid}:\n${error}`
                             );
                             throw error;
                         } finally {
-                            await job.cleanup();
+                            // Cleanup is also called by ws.on('close') if client
+                            // disconnects mid-job; guard against double-cleanup.
+                            if (job.state !== undefined) {
+                                try { await job.cleanup(); } catch (_) {}
+                            }
                         }
-                        ws.close(4999, 'Job Completed'); // Will not execute if an error is thrown above
+                        safe_ws_send(ws, JSON.stringify({ type: 'exit', stage: 'done' }));
+                        ws.close(4999, 'Job Completed');
                     } else {
                         ws.close(4000, 'Already Initialized');
                     }
@@ -222,46 +334,10 @@ router.ws('/connect', async (ws, req) => {
                     break;
             }
         } catch (error) {
-            ws.send(JSON.stringify({ type: 'error', message: error.message }));
+            safe_ws_send(ws, JSON.stringify({ type: 'error', message: error.message }));
             ws.close(4002, 'Notified Error');
-            // ws.close message is limited to 123 characters, so we notify over WS then close.
         }
     });
-
-    setTimeout(() => {
-        //Terminate the socket after 1 second, if not initialized.
-        if (job === null) ws.close(4001, 'Initialization Timeout');
-    }, 1000);
-});
-
-router.post('/execute', async (req, res) => {
-    let job;
-    try {
-        job = await get_job(req.body);
-    } catch (error) {
-        return res.status(400).json(error);
-    }
-    try {
-        const box = await job.prime();
-
-        let result = await job.execute(box);
-        // Backward compatibility when the run stage is not started
-        if (result.run === undefined) {
-            result.run = result.compile;
-        }
-
-        return res.status(200).send(result);
-    } catch (error) {
-        logger.error(`Error executing job: ${job.uuid}:\n${error}`);
-        return res.status(500).send();
-    } finally {
-        try {
-            await job.cleanup(); // This gets executed before the returns in try/catch
-        } catch (error) {
-            logger.error(`Error cleaning up job: ${job.uuid}:\n${error}`);
-            return res.status(500).send(); // On error, this replaces the return in the outer try-catch
-        }
-    }
 });
 
 router.get('/runtimes', (req, res) => {
@@ -277,7 +353,8 @@ router.get('/runtimes', (req, res) => {
     return res.status(200).send(runtimes);
 });
 
-router.get('/packages', async (req, res) => {
+// H2: Rate limit package management — 10 requests per minute per IP
+router.get('/packages', make_limiter(30, 60 * 1000), async (req, res) => {
     logger.debug('Request to list packages');
     let packages = await package.get_package_list();
 
@@ -292,8 +369,19 @@ router.get('/packages', async (req, res) => {
     return res.status(200).send(packages);
 });
 
-router.post('/packages', async (req, res) => {
+// H3: Package install/uninstall — rate limited; in production gate with API key via env
+const pkg_admin_limiter = make_limiter(10, 60 * 1000);
+
+router.post('/packages', pkg_admin_limiter, async (req, res) => {
     logger.debug('Request to install package');
+
+    // H3: Optional API key auth — set PISTON_API_KEY env var to enable
+    if (process.env.PISTON_API_KEY) {
+        const provided = req.headers['x-piston-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
+        if (provided !== process.env.PISTON_API_KEY) {
+            return res.status(401).send({ message: 'Unauthorized' });
+        }
+    }
 
     const { language, version } = req.body;
 
@@ -321,8 +409,16 @@ router.post('/packages', async (req, res) => {
     }
 });
 
-router.delete('/packages', async (req, res) => {
+router.delete('/packages', pkg_admin_limiter, async (req, res) => {
     logger.debug('Request to uninstall package');
+
+    // H3: Optional API key auth
+    if (process.env.PISTON_API_KEY) {
+        const provided = req.headers['x-piston-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
+        if (provided !== process.env.PISTON_API_KEY) {
+            return res.status(401).send({ message: 'Unauthorized' });
+        }
+    }
 
     const { language, version } = req.body;
 

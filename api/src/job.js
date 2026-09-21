@@ -14,12 +14,32 @@ const job_states = {
 
 const MAX_BOX_ID = 999;
 const ISOLATE_PATH = '/usr/local/bin/isolate';
-let box_id = 0;
 
+// C4: Track in-use box IDs to prevent collision when IDs wrap around
+const used_box_ids = new Set();
+let box_id_counter = 0;
+
+const get_next_box_id = () => {
+    for (let i = 0; i < MAX_BOX_ID; i++) {
+        box_id_counter = (box_id_counter + 1) % MAX_BOX_ID;
+        if (!used_box_ids.has(box_id_counter)) {
+            used_box_ids.add(box_id_counter);
+            return box_id_counter;
+        }
+    }
+    throw new Error('No available isolate box IDs — all slots in use');
+};
+
+const release_box_id = (id) => {
+    used_box_ids.delete(id);
+};
+
+// C2: Use a proper semaphore to prevent TOCTOU race on job slot counter.
+// remaining_job_spaces is decremented *before* yielding the event loop,
+// and cleanup passes the slot directly to the next waiter rather than
+// incrementing and hoping a later check wins.
 let remaining_job_spaces = config.max_concurrent_jobs;
 let job_queue = [];
-
-const get_next_box_id = () => ++box_id % MAX_BOX_ID;
 
 class Job {
     #dirty_boxes;
@@ -61,22 +81,27 @@ class Job {
     }
 
     async #create_isolate_box() {
-        const box_id = get_next_box_id();
-        const metadata_file_path = `/tmp/${box_id}-metadata.txt`;
+        // C4: get_next_box_id throws if no slots available — let it propagate
+        const id = get_next_box_id();
+        const metadata_file_path = `/tmp/${id}-metadata.txt`;
         return new Promise((res, rej) => {
             cp.exec(
-                `isolate --init --cg -b${box_id}`,
+                `isolate --init --cg -b${id}`,
                 (error, stdout, stderr) => {
                     if (error) {
+                        release_box_id(id);
                         rej(
                             `Failed to run isolate --init: ${error.message}\nstdout: ${stdout}\nstderr: ${stderr}`
                         );
+                        return;
                     }
                     if (stdout === '') {
+                        release_box_id(id);
                         rej('Received empty stdout from isolate --init');
+                        return;
                     }
                     const box = {
-                        id: box_id,
+                        id,
                         metadata_file_path,
                         dir: `${stdout.trim()}/box`,
                     };
@@ -88,14 +113,19 @@ class Job {
     }
 
     async prime() {
+        // C2: Atomically claim a slot. Decrement *before* any await so no
+        // concurrent prime() can observe the same positive count and both proceed.
         if (remaining_job_spaces < 1) {
             this.logger.info(`Awaiting job slot`);
             await new Promise(resolve => {
                 job_queue.push(resolve);
             });
+            // Slot was handed to us directly by cleanup() — do NOT decrement again.
+        } else {
+            remaining_job_spaces--;
         }
+
         this.logger.info(`Priming job`);
-        remaining_job_spaces--;
         this.logger.debug('Running isolate --init');
         const box = await this.#create_isolate_box();
 
@@ -339,6 +369,7 @@ class Job {
         this.logger.debug('Compiling');
 
         let compile;
+        // M6: treat signal-killed compile as errored, same as non-zero exit
         let compile_errored = false;
         const { emit_event_bus_result, emit_event_bus_stage } =
             event_bus === null
@@ -373,7 +404,8 @@ class Job {
                 event_bus
             );
             emit_event_bus_result('compile', compile);
-            compile_errored = compile.code !== 0;
+            // M6: also treat signal kill (code===null) as a compile error
+            compile_errored = compile.code !== 0 || compile.code === null;
             if (!compile_errored) {
                 const old_box_dir = box.dir;
                 box = await this.#create_isolate_box();
@@ -413,29 +445,40 @@ class Job {
     async cleanup() {
         this.logger.info(`Cleaning up job`);
 
-        remaining_job_spaces++;
+        // C2: Pass the slot directly to the next waiter if one exists,
+        // otherwise increment the counter. This avoids the TOCTOU window
+        // where two primes both see remaining_job_spaces >= 1.
         if (job_queue.length > 0) {
             job_queue.shift()();
+            // remaining_job_spaces stays the same — handed off to the waiter
+        } else {
+            remaining_job_spaces++;
         }
+
+        // C3: Properly await isolate --cleanup by wrapping cp.exec in a Promise
         await Promise.all(
-            this.#dirty_boxes.map(async box => {
-                cp.exec(
-                    `isolate --cleanup --cg -b${box.id}`,
-                    (error, stdout, stderr) => {
-                        if (error) {
-                            this.logger.error(
-                                `Failed to run isolate --cleanup: ${error.message} on box #${box.id}\nstdout: ${stdout}\nstderr: ${stderr}`
-                            );
+            this.#dirty_boxes.map(box => {
+                return new Promise(resolve => {
+                    cp.exec(
+                        `isolate --cleanup --cg -b${box.id}`,
+                        (error, stdout, stderr) => {
+                            if (error) {
+                                this.logger.error(
+                                    `Failed to run isolate --cleanup: ${error.message} on box #${box.id}\nstdout: ${stdout}\nstderr: ${stderr}`
+                                );
+                            }
+                            // C4: Release the box ID regardless of cleanup success
+                            release_box_id(box.id);
+                            resolve();
                         }
-                    }
-                );
-                try {
-                    await fs.rm(box.metadata_file_path);
-                } catch (e) {
-                    this.logger.error(
-                        `Failed to remove the metadata directory of box #${box.id}. Error: ${e.message}`
                     );
-                }
+                }).then(() =>
+                    fs.rm(box.metadata_file_path).catch(e =>
+                        this.logger.error(
+                            `Failed to remove metadata for box #${box.id}: ${e.message}`
+                        )
+                    )
+                );
             })
         );
     }

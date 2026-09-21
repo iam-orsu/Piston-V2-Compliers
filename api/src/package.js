@@ -12,6 +12,17 @@ const runtime = require('./runtime');
 const chownr = require('chownr');
 const util = require('util');
 
+// M4: Abort controller for fetch timeouts
+const FETCH_TIMEOUT_MS = 30000;
+
+const fetch_with_timeout = (url) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    return fetch(url, { signal: controller.signal }).finally(() =>
+        clearTimeout(timer)
+    );
+};
+
 class Package {
     constructor({ language, version, download, checksum }) {
         this.language = language;
@@ -56,7 +67,8 @@ class Package {
             `Downloading package from ${this.download} in to ${this.install_path}`
         );
         const pkgpath = path.join(this.install_path, 'pkg.tar.gz');
-        const download = await fetch(this.download);
+        // M4: Use timeout-aware fetch
+        const download = await fetch_with_timeout(this.download);
 
         const file_stream = fss.create_write_stream(pkgpath);
         await new Promise((resolve, reject) => {
@@ -89,20 +101,23 @@ class Package {
             `Extracting package files from archive ${pkgpath} in to ${this.install_path}`
         );
 
+        // H6: Use cp.spawn with explicit arguments — no shell interpolation,
+        // prevents path injection if install_path contains special characters
         await new Promise((resolve, reject) => {
-            // --touch prevents tar from calling utime(), which fails on WSL2
-            const proc = cp.exec(
-                `bash -c 'cd "${this.install_path}" && tar xzf ${pkgpath} --touch'`
+            const proc = cp.spawn(
+                'tar',
+                ['xzf', pkgpath, '--touch', '-C', this.install_path],
+                { stdio: ['ignore', 'pipe', 'pipe'] }
             );
 
-            proc.once('exit', (code, _) => {
+            proc.stdout.pipe(process.stdout);
+            proc.stderr.pipe(process.stderr);
+
+            proc.once('exit', (code) => {
                 code === 0
                     ? resolve()
                     : reject(new Error(`tar exited with code ${code}`));
             });
-
-            proc.stdout.pipe(process.stdout);
-            proc.stderr.pipe(process.stderr);
 
             proc.once('error', reject);
         });
@@ -111,6 +126,9 @@ class Package {
         runtime.load_package(this.install_path);
 
         logger.debug('Caching environment');
+        // H7: Note — `source environment` executes the package's shell script.
+        // This is by design but means a compromised upstream repo can run
+        // arbitrary code here. Ensure PISTON_REPO_URL points to a trusted source.
         const get_env_command = `cd ${this.install_path}; source environment; env`;
 
         const envout = await new Promise((resolve, reject) => {
@@ -203,7 +221,8 @@ class Package {
     }
 
     static async get_package_list() {
-        const repo_content = await fetch(config.repo_url).then(x => x.text());
+        // M4: Timeout-aware fetch for repo index
+        const repo_content = await fetch_with_timeout(config.repo_url).then(x => x.text());
 
         const entries = repo_content.split('\n').filter(x => x.length > 0);
 

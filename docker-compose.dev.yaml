@@ -4,7 +4,15 @@ services:
     api:
         build: api
         container_name: piston_api
-        privileged: true
+        # C7: Dropped 'privileged: true' — it disabled all Linux security primitives.
+        # Isolate needs SYS_ADMIN for mount namespaces and cgroup control.
+        # These targeted capabilities replace the blanket privileged flag.
+        cap_add:
+            - SYS_ADMIN
+            - NET_ADMIN
+        security_opt:
+            - seccomp=unconfined   # isolate requires unrestricted seccomp
+            - apparmor=unconfined  # isolate manages its own sandboxing
         restart: always
         ports:
             - 2000:2000

@@ -56,7 +56,7 @@ const options = {
     },
     output_max_size: {
         desc: 'Max size of each stdio buffer',
-        default: 1024,
+        default: 65536, // 64KB — raised from 1024 to avoid truncating real programs (M3)
         parser: parse_int,
         validators: [(x, raw) => !is_nan(x) || `${raw} is not a number`],
     },
@@ -104,13 +104,13 @@ const options = {
     },
     compile_memory_limit: {
         desc: 'Max memory usage for compile stage in bytes (set to -1 for no limit)',
-        default: -1, // no limit
+        default: 536870912, // 512MB — C8: unlimited default was an OOM bomb vector
         parser: parse_int,
         validators: [(x, raw) => !is_nan(x) || `${raw} is not a number`],
     },
     run_memory_limit: {
         desc: 'Max memory usage for run stage in bytes (set to -1 for no limit)',
-        default: -1, // no limit
+        default: 268435456, // 256MB — C8: unlimited default was an OOM bomb vector
         parser: parse_int,
         validators: [(x, raw) => !is_nan(x) || `${raw} is not a number`],
     },
@@ -122,7 +122,7 @@ const options = {
     },
     max_concurrent_jobs: {
         desc: 'Maximum number of concurrent jobs to run at one time',
-        default: 64,
+        default: 256, // H10: raised from 64 to utilise 96-vCPU hardware; safe with 256MB memory limits
         parser: parse_int,
         validators: [x => x > 0 || `${x} cannot be negative`],
     },
