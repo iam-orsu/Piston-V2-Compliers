@@ -176,9 +176,14 @@ class Runtime {
     get env_vars() {
         if (!this._env_vars) {
             const env_file = path.join(this.pkgdir, '.env');
-            const env_content = fss.read_file_sync(env_file).toString();
-
-            this._env_vars = env_content.trim().split('\n');
+            // H2: Guard against missing .env file — return an empty list rather
+            // than throwing synchronously inside safe_call() mid-execution.
+            try {
+                const env_content = fss.read_file_sync(env_file).toString();
+                this._env_vars = env_content.trim().split('\n').filter(Boolean);
+            } catch (_) {
+                this._env_vars = [];
+            }
         }
 
         return this._env_vars;

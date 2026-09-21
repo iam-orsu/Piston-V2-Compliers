@@ -31,6 +31,11 @@ services:
         container_name: piston_api_1
         ports:
             - "127.0.0.1:2000:2000"
+        # H4: Explicit memory cap prevents an OOM cascade.
+        # 150 concurrent jobs × 256 MB each = ~37 GB theoretical max.
+        # 42 GB ceiling gives headroom while stopping a runaway from eating the host.
+        # Tune this down on laptops/small VMs (e.g. mem_limit: 4g, max_concurrent_jobs: 8).
+        mem_limit: 42g
         environment:
             PISTON_RUNNER_UID_MIN: "1001"
             PISTON_RUNNER_UID_MAX: "1500"
@@ -49,6 +54,7 @@ services:
     api2:
         <<: *api-base
         container_name: piston_api_2
+        mem_limit: 42g
         environment:
             PISTON_RUNNER_UID_MIN: "1501"
             PISTON_RUNNER_UID_MAX: "2000"
@@ -67,6 +73,7 @@ services:
     api3:
         <<: *api-base
         container_name: piston_api_3
+        mem_limit: 42g
         environment:
             PISTON_RUNNER_UID_MIN: "2001"
             PISTON_RUNNER_UID_MAX: "2500"
@@ -95,6 +102,9 @@ services:
             MAX_LIFETIME_MS: "1800000"
             MAX_SESSIONS: "500"          # Scaled from 200 → 500 for 128 GB RAM host
             PORT: "3000"
+            # M2: Match NODE_OLD_SPACE_MB to this container's mem_limit minus ~500 MB OS overhead.
+            # Lower both values together when deploying on smaller hosts.
+            NODE_OLD_SPACE_MB: "3584"
         mem_limit: 4g                    # Scaled from 1g → 4g to safely manage 500 WS PTY streams
         networks:
             - piston-net

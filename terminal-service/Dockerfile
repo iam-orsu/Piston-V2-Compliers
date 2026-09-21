@@ -21,4 +21,9 @@ EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 
-CMD ["node", "--max-old-space-size=3072", "src/index.js"]
+# M2: Heap size is passed via NODE_OLD_SPACE_MB so operators can tune it for
+# their host without rebuilding the image. Default 3072 matches the 4 GB
+# container mem_limit (4096 MB container − ~500 MB OS/node overhead ≈ 3596).
+# On smaller hosts lower both mem_limit in docker-compose.yaml and this value.
+ENV NODE_OLD_SPACE_MB=3072
+CMD ["sh", "-c", "node --max-old-space-size=${NODE_OLD_SPACE_MB} src/index.js"]

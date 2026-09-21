@@ -217,10 +217,27 @@ router.ws('/connect', async (ws, req) => {
     }
     active_ws_connections++;
 
+    // Disable the server-level socket inactivity timeout for this WS connection.
+    // server.setTimeout fires after 30 s of idle, which would kill long-running
+    // interactive jobs. The job itself has its own wall-time timeout.
+    if (req.socket) req.socket.setTimeout(0);
+
     let job = null;
+    let initializing = false;  // M5: guard against double-init race
     let event_bus = new events.EventEmitter();
     // Prevent Node's MaxListenersExceededWarning for long-running interactive jobs
     event_bus.setMaxListeners(20);
+
+    // C2: Single-shot cleanup guard — prevents double-release of the job slot
+    // when both the 'init' finally-block AND ws.on('close') call cleanup().
+    let cleanup_done = false;
+    const do_cleanup = async () => {
+        if (cleanup_done || job === null) return;
+        cleanup_done = true;
+        try { await job.cleanup(); } catch (e) {
+            logger.error(`Cleanup error for job ${job?.uuid}: ${e}`);
+        }
+    };
 
     // H4: All event_bus -> ws sends go through safe_ws_send
     event_bus.on('stdout', data =>
@@ -253,19 +270,16 @@ router.ws('/connect', async (ws, req) => {
         if (job === null) ws.close(4001, 'Initialization Timeout');
     }, 10000);
 
-    // H5: Clean up event_bus and kill any running job on disconnect
+    // C1+C2: On disconnect — kill FIRST (listeners still attached), THEN remove
+    // listeners, THEN run cleanup through the idempotent guard.
     ws.on('close', async () => {
         active_ws_connections--;
         clearTimeout(init_timeout);
-        event_bus.removeAllListeners();
         if (job !== null) {
-            event_bus.emit('kill', 'SIGKILL');
-            try {
-                await job.cleanup();
-            } catch (e) {
-                logger.error(`Cleanup on disconnect for job ${job?.uuid}: ${e}`);
-            }
+            event_bus.emit('kill', 'SIGKILL');  // C1: kill before removing listeners
         }
+        event_bus.removeAllListeners();
+        await do_cleanup();                      // C2: idempotent — no-op if already done
     });
 
     ws.on('message', async data => {
@@ -275,38 +289,39 @@ router.ws('/connect', async (ws, req) => {
             switch (msg.type) {
                 case 'init':
                     clearTimeout(init_timeout);
-                    if (job === null) {
-                        job = await get_job(msg);
-
-                        try {
-                            const box = await job.prime();
-
-                            safe_ws_send(ws,
-                                JSON.stringify({
-                                    type: 'runtime',
-                                    language: job.runtime.language,
-                                    version: job.runtime.version.raw,
-                                })
-                            );
-
-                            await job.execute(box, event_bus);
-                        } catch (error) {
-                            logger.error(
-                                `Error executing job ${job.uuid}:\n${error}`
-                            );
-                            throw error;
-                        } finally {
-                            // Cleanup is also called by ws.on('close') if client
-                            // disconnects mid-job; guard against double-cleanup.
-                            if (job.state !== undefined) {
-                                try { await job.cleanup(); } catch (_) {}
-                            }
-                        }
-                        safe_ws_send(ws, JSON.stringify({ type: 'exit', stage: 'done' }));
-                        ws.close(4999, 'Job Completed');
-                    } else {
+                    // M5: Guard against concurrent 'init' messages arriving while
+                    // get_job() is awaiting. 'initializing' is set synchronously
+                    // before the first yield so a second message sees it set.
+                    if (job !== null || initializing) {
                         ws.close(4000, 'Already Initialized');
+                        return;
                     }
+                    initializing = true;
+                    job = await get_job(msg);
+                    initializing = false;
+
+                    try {
+                        const box = await job.prime();
+
+                        safe_ws_send(ws,
+                            JSON.stringify({
+                                type: 'runtime',
+                                language: job.runtime.language,
+                                version: job.runtime.version.raw,
+                            })
+                        );
+
+                        await job.execute(box, event_bus);
+                    } catch (error) {
+                        logger.error(
+                            `Error executing job ${job.uuid}:\n${error}`
+                        );
+                        throw error;
+                    } finally {
+                        await do_cleanup();  // C2: idempotent guard
+                    }
+                    safe_ws_send(ws, JSON.stringify({ type: 'exit', stage: 'done' }));
+                    ws.close(4999, 'Job Completed');
                     break;
                 case 'data':
                     if (job !== null) {

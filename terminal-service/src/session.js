@@ -1,7 +1,7 @@
 'use strict';
 
 const pty              = require('node-pty');
-const { execSync, exec, spawn } = require('child_process');
+const { exec, spawn } = require('child_process');
 const { randomBytes }  = require('crypto');
 
 const SANDBOX_IMAGE = process.env.SANDBOX_IMAGE  || 'piston-sandbox:latest';
@@ -220,15 +220,17 @@ async function createSession(ws) {
     }
 }
 
-// Kill orphaned student containers left from previous crash
+// M3: Kill orphaned student containers from a previous crash.
+// Uses async exec (not execSync) so startup is non-blocking and a slow Docker
+// daemon cannot freeze the event loop during the initial health-check window.
 function cleanupOrphans() {
-    try {
-        const out = execSync('docker ps -q --filter "name=student-"').toString().trim();
-        if (out) {
-            execSync(`docker rm -f ${out.split('\n').join(' ')} 2>/dev/null`);
+    exec('docker ps -q --filter "name=student-"', (err, stdout) => {
+        if (err || !stdout.trim()) return;
+        const ids = stdout.trim().split('\n').join(' ');
+        exec(`docker rm -f ${ids}`, () => {
             console.log('[terminal-service] cleaned up orphaned containers');
-        }
-    } catch (_) {}
+        });
+    });
 }
 
 // Graceful shutdown

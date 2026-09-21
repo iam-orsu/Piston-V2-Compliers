@@ -12,7 +12,11 @@ const job_states = {
     EXECUTED: Symbol('Executed and ready for cleanup'),
 };
 
-const MAX_BOX_ID = 999;
+// H5: MAX_BOX_ID must exceed the highest number of concurrent isolate boxes we
+// can ever have open at once. Each job needs up to 2 boxes (compile + run).
+// Use 4× max_concurrent_jobs so there is always plenty of headroom even with
+// slow cleanup. Hard minimum of 999 for safety on small installs.
+const MAX_BOX_ID = Math.max(999, config.max_concurrent_jobs * 4);
 const ISOLATE_PATH = '/usr/local/bin/isolate';
 
 // C4: Track in-use box IDs to prevent collision when IDs wrap around
@@ -78,6 +82,7 @@ class Job {
 
         this.state = job_states.READY;
         this.#dirty_boxes = [];
+        this._cleanup_done = false;
     }
 
     async #create_isolate_box() {
@@ -443,6 +448,12 @@ class Job {
     }
 
     async cleanup() {
+        // Belt-and-suspenders idempotency guard — v2.js also wraps cleanup in
+        // a do_cleanup() closure but having the guard here too protects any
+        // future callers that forget to use the wrapper.
+        if (this._cleanup_done) return;
+        this._cleanup_done = true;
+
         this.logger.info(`Cleaning up job`);
 
         // C2: Pass the slot directly to the next waiter if one exists,

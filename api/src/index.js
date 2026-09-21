@@ -56,13 +56,19 @@ let server_ref = null;
         globals.data_directories.packages
     );
 
-    const pkglist = await fs.readdir(pkgdir);
+    // H3: Guard against missing packages directory (e.g., volume not yet mounted)
+    let pkglist = [];
+    try {
+        pkglist = await fs.readdir(pkgdir);
+    } catch (e) {
+        logger.warn(`Could not read packages directory (${pkgdir}): ${e.message} — starting with no runtimes`);
+    }
 
     const languages = await Promise.all(
         pkglist.map(lang => {
             return fs.readdir(path.join(pkgdir, lang)).then(x => {
                 return x.map(y => path.join(pkgdir, lang, y));
-            });
+            }).catch(() => []);  // skip unreadable language dirs
         })
     );
 
@@ -72,7 +78,15 @@ let server_ref = null;
             fss.exists_sync(path.join(pkg, globals.pkg_installed_file))
         );
 
-    installed_languages.for_each(pkg => runtime.load_package(pkg));
+    // C5: Wrap each load_package call — one malformed pkg-info.json must not
+    // crash the entire startup. Log and skip the bad package instead.
+    installed_languages.for_each(pkg => {
+        try {
+            runtime.load_package(pkg);
+        } catch (e) {
+            logger.error(`Failed to load package at ${pkg}: ${e.message} — skipping`);
+        }
+    });
 
     logger.info('Starting API Server');
     logger.debug('Constructing Express App');
@@ -112,8 +126,11 @@ let server_ref = null;
 
     server_ref = server;
 
-    // M7: HTTP timeouts — prevent slow clients from holding connections indefinitely
-    server.setTimeout(30000);
+    // C3: Set socket timeout to 180 s — long enough to cover the worst-case job
+    // duration (compile_timeout 30 s + run_timeout 120 s + generous margin).
+    // WebSocket /connect handlers override this per-socket with setTimeout(0).
+    // The previous value of 30 s killed HTTP sockets for any job running > 30 s.
+    server.setTimeout(180000);
     server.keepAliveTimeout = 65000;
     server.headersTimeout = 66000;
 

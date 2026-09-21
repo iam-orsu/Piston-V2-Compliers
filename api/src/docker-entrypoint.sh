@@ -16,12 +16,14 @@ if [ ! -e "$CGROUP_FS/cgroup.subtree_control" ]; then
   exit 1
 fi
 
+# H1: Use mkdir -p so container restart doesn't fail when the cgroup dirs
+# already exist from the previous container run on the same host.
 cd /sys/fs/cgroup && \
-mkdir isolate/ && \
+mkdir -p isolate/ && \
 echo 1 > isolate/cgroup.procs && \
 echo '+cpuset +cpu +io +memory +pids' > cgroup.subtree_control && \
 cd isolate && \
-mkdir init && \
+mkdir -p init && \
 echo 1 > init/cgroup.procs && \
 echo '+cpuset +memory' > cgroup.subtree_control && \
 echo "Initialized cgroup" && \

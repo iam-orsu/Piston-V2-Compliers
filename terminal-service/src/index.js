@@ -1,5 +1,17 @@
 'use strict';
 
+// M1: Global crash handlers — prevent a single unexpected error from killing
+// all active terminal sessions. Log and continue rather than exit.
+process.on('unhandledRejection', (reason) => {
+    console.error('[terminal-service] Unhandled Promise Rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('[terminal-service] Uncaught Exception:', err);
+    // Do NOT exit — we have potentially hundreds of active sessions.
+    // Let the individual session cleanup handlers deal with session state.
+});
+
 const express   = require('express');
 const expressWs = require('express-ws');
 const { createSession, activeSessions } = require('./session');
