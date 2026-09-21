@@ -1,0 +1,8 @@
+# Force LF line endings for all shell scripts — prevents Windows CRLF from
+# breaking shebang lines inside Docker containers (kernel sees #!/bin/bash\r
+# as a non-existent interpreter and the container crashes with "not found").
+*.sh    text eol=lf
+*.bash  text eol=lf
+
+# Normalize text files to LF on commit
+*       text=auto
