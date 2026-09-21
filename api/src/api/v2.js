@@ -368,7 +368,7 @@ router.get('/runtimes', (req, res) => {
     return res.status(200).send(runtimes);
 });
 
-// Rate limit read-only package listing
+// Rate limit read-only package listing — returns locally installed packages
 router.get('/packages', make_limiter(30, 60 * 1000), async (req, res) => {
     logger.debug('Request to list packages');
     let packages = await package.get_package_list();
@@ -384,16 +384,34 @@ router.get('/packages', make_limiter(30, 60 * 1000), async (req, res) => {
     return res.status(200).send(packages);
 });
 
-// Dynamic package install/uninstall are permanently disabled.
-// This deployment is air-gapped: all runtimes are pre-baked onto the volume.
-// These endpoints are hard-blocked so no client can trigger remote downloads
-// or shell evaluation (source environment) under any circumstances.
-router.post('/packages', (req, res) => {
-    return res.status(403).send({ message: 'Package installation is disabled on this instance.' });
+// Install a package from the remote registry.
+// Rate-limited to 5 installs per minute to prevent abuse.
+router.post('/packages', make_limiter(5, 60 * 1000), async (req, res) => {
+    let { language, version } = req.body;
+
+    if (!language || typeof language !== 'string') {
+        return res.status(400).json({ message: 'language is required as a string' });
+    }
+    if (!version || typeof version !== 'string') {
+        return res.status(400).json({ message: 'version is required as a string' });
+    }
+
+    const pkg = new package({ language, version });
+    if (pkg.version === null) {
+        return res.status(400).json({ message: `Invalid semver version: ${version}` });
+    }
+
+    try {
+        const result = await pkg.install();
+        return res.status(200).json(result);
+    } catch (err) {
+        logger.error(`Package install failed for ${language}-${version}: ${err.message}`);
+        return res.status(500).json({ message: err.message });
+    }
 });
 
-router.delete('/packages', (req, res) => {
-    return res.status(403).send({ message: 'Package removal is disabled on this instance.' });
+router.delete('/packages', make_limiter(5, 60 * 1000), async (req, res) => {
+    return res.status(501).json({ message: 'Package removal not implemented' });
 });
 
 module.exports = router;

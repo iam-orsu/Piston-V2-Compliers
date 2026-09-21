@@ -166,26 +166,59 @@ ensure_cli_deps() {
     fi
 }
 
-# Manual install of a single runtime (user-triggered via ./deploy.sh install <lang>).
-# This intentionally calls ppman install — use only when the user explicitly requests it.
+# Install a single runtime by calling POST /api/v2/packages directly via curl.
+# No dependency on node being installed on the host.
+# Usage: install_runtime python 3.12.0
 install_runtime() {
     local lang="$1"
+    local ver="${2:-}"
+
+    # Skip if already installed
     if curl -sf http://localhost:2000/api/v2/runtimes 2>/dev/null \
             | grep -q "\"language\":\"${lang}\""; then
         step "$lang already installed — skipping."
         return 0
     fi
-    echo -e "   ${YELLOW}⬇  Installing ${BOLD}${lang}${NC}${YELLOW}...${NC}"
-    (cd "$SCRIPT_DIR/cli" && node index.js ppman install "$lang") 2>&1 | tail -3 || {
+
+    # If no version given, find the latest from the remote package index
+    if [[ -z "$ver" ]]; then
+        ver=$(curl -sf 'https://github.com/engineer-man/piston/releases/download/pkgs/index' \
+            2>/dev/null \
+            | grep "\"language\":\"${lang}\"" \
+            | python3 -c "
+import json, sys, re
+lines = [l for l in sys.stdin if '\"language\":\"${lang}\"' in l]
+if not lines:
+    sys.exit(1)
+versions = [json.loads(l)['language_version'] for l in lines]
+# pick the last one (usually latest in the index)
+print(versions[-1])
+" 2>/dev/null || echo "")
+        if [[ -z "$ver" ]]; then
+            warn "Could not find $lang in the package registry — try: ./deploy.sh install $lang <version>"
+            return 1
+        fi
+    fi
+
+    echo -e "   ${YELLOW}⬇  Installing ${BOLD}${lang}=${ver}${NC}${YELLOW}...${NC}"
+    local response
+    response=$(curl -sf -X POST http://localhost:2000/api/v2/packages \
+        -H 'Content-Type: application/json' \
+        -d "{\"language\":\"${lang}\",\"version\":\"${ver}\"}" 2>&1)
+    local exit_code=$?
+    if [[ $exit_code -ne 0 || "$response" == *'"message"'* ]]; then
         warn "Failed to install $lang — run './deploy.sh logs api1' for details"
-    }
+        [[ -n "$response" ]] && warn "  $response"
+        return 1
+    fi
+    step "$lang=$ver installed."
 }
 
-# Air-gap safe: reads the runtimes already on the packages volume and reports their
-# status. Does NOT attempt ppman install (would return 403 in air-gapped mode).
+# On startup: install any DEFAULT_RUNTIMES that are missing from the packages volume.
+# Uses the remote registry. Skips runtimes that are already present.
 auto_install_runtimes() {
     echo ""
-    echo -e "${CYAN}${BOLD}🚀  Verifying pre-installed runtimes...${NC}"
+    echo -e "${CYAN}${BOLD}🚀  Checking default runtimes...${NC}"
 
     local runtimes_json
     runtimes_json=$(curl -sf http://localhost:2000/api/v2/runtimes 2>/dev/null || echo "[]")
@@ -206,15 +239,19 @@ print(match['version'] if match else '')
         fi
     done
 
-    echo ""
-    if [[ ${#missing[@]} -gt 0 ]]; then
-        warn "The following runtimes are not on the packages volume:"
-        for lang in "${missing[@]}"; do
-            warn "  • ${lang}  —  run: ./deploy.sh install ${lang}"
-        done
-    else
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        echo ""
         echo -e "${GREEN}${BOLD}✅  All default runtimes are present.${NC}"
+        return 0
     fi
+
+    echo ""
+    echo -e "${CYAN}  Installing missing runtimes (this may take a few minutes)...${NC}"
+    for lang in "${missing[@]}"; do
+        install_runtime "$lang"
+    done
+    echo ""
+    echo -e "${GREEN}${BOLD}✅  Runtime installation complete.${NC}"
 }
 
 # ── Commands ─────────────────────────────────────────────────────────────────
@@ -357,19 +394,26 @@ cmd_logs() {
 
 cmd_install() {
     local lang="${1:-}"
-    [[ -z "$lang" ]] && err "Usage: ./deploy.sh install <language>  (e.g. python, java, rust)"
+    local ver="${2:-}"
+    [[ -z "$lang" ]] && err "Usage: ./deploy.sh install <language> [version]  (e.g. python, java=15.0.2)"
     check_docker
-    ensure_cli_deps
     wait_for_api
-    install_runtime "$lang"
+    install_runtime "$lang" "$ver"
     echo -e "${GREEN}✅  Done! Refresh the IDE to see ${lang} in the dropdown.${NC}"
 }
 
 cmd_list() {
     check_docker
-    ensure_cli_deps
-    echo -e "${BLUE}${BOLD}Available packages:${NC}"
-    (cd "$SCRIPT_DIR/cli" && node index.js ppman list)
+    echo -e "${BLUE}${BOLD}Available packages from registry:${NC}"
+    curl -sf 'https://github.com/engineer-man/piston/releases/download/pkgs/index' \
+        2>/dev/null \
+        | python3 -c "
+import json, sys
+lines = [l.strip() for l in sys.stdin if l.strip()]
+pkgs = [json.loads(l) for l in lines]
+for p in sorted(pkgs, key=lambda x: x['language']):
+    print(f'  {p[\"language\"]:<20} {p[\"language_version\"]}')
+" || warn "Could not fetch package registry — check internet connectivity"
 }
 
 cmd_runtimes() {
