@@ -122,9 +122,16 @@ class Session {
 
     seedFile(filename, content) {
         if (this.dead) return;
-        // Only allow safe filenames (e.g. main.py, Main.java, main.ts)
         if (typeof filename !== 'string') return;
-        if (!/^[a-zA-Z][a-zA-Z0-9_.\-]*$/.test(filename)) return;
+        // Allow nested paths like src/models/user.py but strictly block:
+        //   - shell metacharacters  (only alphanum + _ . - / allowed)
+        //   - absolute paths        (no leading /)
+        //   - traversal components  (no .. or bare .)
+        //   - double/trailing slash (no // or trailing /)
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9_.\-/]*$/.test(filename)) return;
+        if (filename.startsWith('/')) return;
+        if (filename.includes('//') || filename.endsWith('/')) return;
+        if (filename.split('/').some(p => p === '..' || p === '.')) return;
         if (typeof content !== 'string' || content.length > 65536) return;
         const prevFile = (this._seededFile !== filename) ? this._seededFile : null;
         this._seededFile = filename;
@@ -133,10 +140,14 @@ class Session {
 
     _doSeed(filename, content, prevFile, retriesLeft) {
         if (this.dead || retriesLeft <= 0) return;
-        // Remove previous language's file first so sandbox home only ever has one file
-        const cmd = prevFile
-            ? `rm -f /home/sandbox/${prevFile} && cat > /home/sandbox/${filename}`
-            : `cat > /home/sandbox/${filename}`;
+        // Create parent directories if the path contains subdirectories.
+        // filename is fully validated above — only [a-zA-Z0-9_.\-/], no .. — safe to interpolate.
+        const lastSlash = filename.lastIndexOf('/');
+        const mkdirPart = lastSlash > -1
+            ? `mkdir -p /home/sandbox/${filename.slice(0, lastSlash)} && `
+            : '';
+        const rmPart = prevFile ? `rm -f /home/sandbox/${prevFile} && ` : '';
+        const cmd = `${rmPart}${mkdirPart}cat > /home/sandbox/${filename}`;
         const child = spawn('docker', [
             'exec', '-i', this.containerName,
             'sh', '-c', cmd,
