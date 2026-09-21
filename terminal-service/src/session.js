@@ -87,24 +87,20 @@ class Session {
 
         // Stream PTY output → WebSocket
         this._pty.onData(data => {
-            if (this.ws.readyState === 1) {
-                this.ws.send(JSON.stringify({ type: 'output', data }));
-            }
+            this._send({ type: 'output', data });
         });
 
         this._pty.onExit(({ exitCode, signal }) => {
             if (this.dead) return;
-            if (this.ws.readyState === 1) {
-                this.ws.send(JSON.stringify({ type: 'exit', code: exitCode, signal: signal || null }));
-                this.ws.close();
-            }
+            this._send({ type: 'exit', code: exitCode, signal: signal || null });
+            if (this.ws.readyState === 1) this.ws.close();
             this._cleanup();  // _cleanup sets this.dead = true — must not pre-set it here
         });
 
         this._startTimers();
         activeSessions.set(this.id, this);
 
-        this.ws.send(JSON.stringify({ type: 'ready', sessionId: this.id }));
+        this._send({ type: 'ready', sessionId: this.id });
         console.log(`[session ${this.id}] started → container ${this.containerName}`);
     }
 
@@ -164,11 +160,15 @@ class Session {
     destroy(reason = 'unknown') {
         if (this.dead) return;
         console.log(`[session ${this.id}] destroyed: ${reason}`);
-        if (this.ws.readyState === 1) {
-            this.ws.send(JSON.stringify({ type: 'killed', reason }));
-            this.ws.close();
-        }
+        this._send({ type: 'killed', reason });
+        if (this.ws.readyState === 1) this.ws.close();
         this._cleanup();
+    }
+
+    _send(payload) {
+        if (this.ws && this.ws.readyState === 1 /* OPEN */) {
+            try { this.ws.send(JSON.stringify(payload)); } catch (_) {}
+        }
     }
 
     _cleanup() {

@@ -28,4 +28,4 @@ echo 1 > init/cgroup.procs && \
 echo '+cpuset +memory' > cgroup.subtree_control && \
 echo "Initialized cgroup" && \
 chown -R piston:piston /piston && \
-exec su -- piston -c 'ulimit -n 65536 && node /piston_api/src'
+exec su -- piston -c 'ulimit -n 65536 2>/dev/null || true; exec node /piston_api/src'
