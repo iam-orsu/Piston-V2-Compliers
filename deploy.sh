@@ -166,6 +166,8 @@ ensure_cli_deps() {
     fi
 }
 
+# Manual install of a single runtime (user-triggered via ./deploy.sh install <lang>).
+# This intentionally calls ppman install — use only when the user explicitly requests it.
 install_runtime() {
     local lang="$1"
     if curl -sf http://localhost:2000/api/v2/runtimes 2>/dev/null \
@@ -179,31 +181,39 @@ install_runtime() {
     }
 }
 
+# Air-gap safe: reads the runtimes already on the packages volume and reports their
+# status. Does NOT attempt ppman install (would return 403 in air-gapped mode).
 auto_install_runtimes() {
-    ensure_cli_deps
-
     echo ""
-    echo -e "${CYAN}${BOLD}🚀  Checking default runtimes...${NC}"
+    echo -e "${CYAN}${BOLD}🚀  Verifying pre-installed runtimes...${NC}"
 
-    local installed_any=0
+    local runtimes_json
+    runtimes_json=$(curl -sf http://localhost:2000/api/v2/runtimes 2>/dev/null || echo "[]")
+
+    local missing=()
     for lang in "${DEFAULT_RUNTIMES[@]}"; do
-        if curl -sf http://localhost:2000/api/v2/runtimes 2>/dev/null \
-                | grep -q "\"language\":\"${lang}\""; then
-            step "$lang already installed — skipping."
+        if echo "$runtimes_json" | grep -q "\"language\":\"${lang}\""; then
+            local ver
+            ver=$(echo "$runtimes_json" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+match = next((r for r in data if r['language'] == '${lang}'), None)
+print(match['version'] if match else '')
+" 2>/dev/null || echo "")
+            step "${lang}  ${ver}"
         else
-            echo -e "   ${YELLOW}⬇  Installing ${BOLD}${lang}${NC}${YELLOW}...${NC}"
-            (cd "$SCRIPT_DIR/cli" && node index.js ppman install "$lang") 2>&1 | tail -3 || {
-                warn "Failed to install $lang"
-            }
-            installed_any=1
+            missing+=("$lang")
         fi
     done
 
     echo ""
-    if [[ "$installed_any" -eq 1 ]]; then
-        echo -e "${GREEN}${BOLD}✅  All default runtimes ready!${NC}"
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        warn "The following runtimes are not on the packages volume:"
+        for lang in "${missing[@]}"; do
+            warn "  • ${lang}  —  run: ./deploy.sh install ${lang}"
+        done
     else
-        echo -e "${GREEN}${BOLD}✅  All default runtimes already installed.${NC}"
+        echo -e "${GREEN}${BOLD}✅  All default runtimes are present.${NC}"
     fi
 }
 
