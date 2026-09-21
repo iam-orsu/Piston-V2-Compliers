@@ -94,13 +94,19 @@ class Package {
 
         logger.info(`Installing ${this.language}-${this.version.raw}`);
 
-        // Fetch the NDJSON package index from the registry
+        // Fetch the CSV package index from the registry.
+        // Format per line: language,version,sha256,download_url
         const index_text = await fetch_text(`${REPO_URL}/index`);
-        const index = index_text.trim().split('\n').map(line => JSON.parse(line));
+        const index = index_text.trim().split('\n')
+            .filter(l => l.trim())
+            .map(line => {
+                const [language, version, , url] = line.split(',');
+                return { language, version, url };
+            });
 
         // Find matching entry — exact version match
         const entry = index.find(
-            p => p.language === this.language && p.language_version === this.version.raw
+            p => p.language === this.language && p.version === this.version.raw
         );
         if (!entry) {
             throw new Error(
@@ -108,11 +114,11 @@ class Package {
             );
         }
 
-        // Download the tarball
-        const tarball_name = `${entry.language}-${entry.language_version}.tar.gz`;
+        // Download the tarball using the URL from the index
+        const tarball_name = `${entry.language}-${entry.version}.pkg.tar.gz`;
         const tmp_path = `/tmp/${tarball_name}`;
         logger.info(`Downloading ${tarball_name}...`);
-        await download_file(`${REPO_URL}/${tarball_name}`, tmp_path);
+        await download_file(entry.url, tmp_path);
 
         // Create install directory and extract
         await fs.mkdir(this.install_path, { recursive: true });
@@ -186,10 +192,12 @@ class Package {
     // Fetch all available packages from the remote registry.
     static async get_package_list_remote() {
         const index_text = await fetch_text(`${REPO_URL}/index`);
-        return index_text.trim().split('\n').map(line => {
-            const p = JSON.parse(line);
-            return new Package({ language: p.language, version: p.language_version });
-        });
+        return index_text.trim().split('\n')
+            .filter(l => l.trim())
+            .map(line => {
+                const [language, version] = line.split(',');
+                return new Package({ language, version });
+            });
     }
 }
 

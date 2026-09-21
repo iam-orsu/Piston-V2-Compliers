@@ -180,20 +180,14 @@ install_runtime() {
         return 0
     fi
 
-    # If no version given, find the latest from the remote package index
+    # If no version given, find the latest from the remote package index.
+    # Index format (CSV): language,version,sha256,url
     if [[ -z "$ver" ]]; then
-        ver=$(curl -sf 'https://github.com/engineer-man/piston/releases/download/pkgs/index' \
+        ver=$(curl -sfL 'https://github.com/engineer-man/piston/releases/download/pkgs/index' \
             2>/dev/null \
-            | grep "\"language\":\"${lang}\"" \
-            | python3 -c "
-import json, sys, re
-lines = [l for l in sys.stdin if '\"language\":\"${lang}\"' in l]
-if not lines:
-    sys.exit(1)
-versions = [json.loads(l)['language_version'] for l in lines]
-# pick the last one (usually latest in the index)
-print(versions[-1])
-" 2>/dev/null || echo "")
+            | grep "^${lang}," \
+            | tail -1 \
+            | cut -d',' -f2)
         if [[ -z "$ver" ]]; then
             warn "Could not find $lang in the package registry — try: ./deploy.sh install $lang <version>"
             return 1
@@ -405,15 +399,11 @@ cmd_install() {
 cmd_list() {
     check_docker
     echo -e "${BLUE}${BOLD}Available packages from registry:${NC}"
-    curl -sf 'https://github.com/engineer-man/piston/releases/download/pkgs/index' \
+    curl -sfL 'https://github.com/engineer-man/piston/releases/download/pkgs/index' \
         2>/dev/null \
-        | python3 -c "
-import json, sys
-lines = [l.strip() for l in sys.stdin if l.strip()]
-pkgs = [json.loads(l) for l in lines]
-for p in sorted(pkgs, key=lambda x: x['language']):
-    print(f'  {p[\"language\"]:<20} {p[\"language_version\"]}')
-" || warn "Could not fetch package registry — check internet connectivity"
+        | awk -F',' '{printf "  %-20s %s\n", $1, $2}' \
+        | sort \
+        || warn "Could not fetch package registry — check internet connectivity"
 }
 
 cmd_runtimes() {
