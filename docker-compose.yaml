@@ -8,15 +8,16 @@ x-api-base: &api-base
     cap_add:
         - SYS_ADMIN
         - NET_ADMIN
-    # cgroupns: host is required for isolate to create cgroup subtrees inside the
-    # container. Docker 20.10+ defaults to a private cgroup namespace which makes
-    # /sys/fs/cgroup read-only from the container's perspective even with SYS_ADMIN.
-    cgroupns_mode: host
     security_opt:
         - seccomp=unconfined            # isolate manages its own seccomp internally
         - apparmor=unconfined           # isolate manages its own AppArmor internally
     volumes:
         - piston-packages:/piston/packages
+        # Bind-mount the host cgroup hierarchy so isolate can create subtrees.
+        # Docker 20.10+ uses a private cgroupns by default, making /sys/fs/cgroup
+        # read-only even with SYS_ADMIN. This is the compose-v5-compatible equivalent
+        # of cgroupns_mode: host.
+        - /sys/fs/cgroup:/sys/fs/cgroup:rw
     tmpfs:
         - /tmp:exec
     networks:
