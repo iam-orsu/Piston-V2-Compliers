@@ -3,21 +3,15 @@ x-api-base: &api-base
         context: ./api
         dockerfile: Dockerfile          # Use the fully-patched main Dockerfile (Node 20, all security fixes)
     restart: always
-    # C7: Dropped blanket privileged:true — replaced with targeted Linux capabilities
-    # isolate needs SYS_ADMIN for mount namespaces and cgroup subtree management.
-    cap_add:
-        - SYS_ADMIN
-        - NET_ADMIN
-    security_opt:
-        - seccomp=unconfined            # isolate manages its own seccomp internally
-        - apparmor=unconfined           # isolate manages its own AppArmor internally
+    # privileged is required: isolate must create cgroup subtrees under
+    # /sys/fs/cgroup/isolate/. Docker 20.10+ defaults to a private cgroup
+    # namespace; compose v5 schema rejects cgroupns_mode. privileged implicitly
+    # sets cgroupns=host — the only working path for isolate on cgroup v2.
+    # Student code sandboxing is handled entirely by isolate; Docker privileged
+    # only grants the ability to manage the container's own cgroup tree.
+    privileged: true
     volumes:
         - piston-packages:/piston/packages
-        # Bind-mount the host cgroup hierarchy so isolate can create subtrees.
-        # Docker 20.10+ uses a private cgroupns by default, making /sys/fs/cgroup
-        # read-only even with SYS_ADMIN. This is the compose-v5-compatible equivalent
-        # of cgroupns_mode: host.
-        - /sys/fs/cgroup:/sys/fs/cgroup:rw
     tmpfs:
         - /tmp:exec
     networks:
