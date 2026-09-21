@@ -11,7 +11,7 @@ x-api-base: &api-base
     # cgroupns: host is required for isolate to create cgroup subtrees inside the
     # container. Docker 20.10+ defaults to a private cgroup namespace which makes
     # /sys/fs/cgroup read-only from the container's perspective even with SYS_ADMIN.
-    cgroupns: host
+    cgroupns_mode: host
     security_opt:
         - seccomp=unconfined            # isolate manages its own seccomp internally
         - apparmor=unconfined           # isolate manages its own AppArmor internally
