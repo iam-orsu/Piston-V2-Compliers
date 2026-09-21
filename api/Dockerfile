@@ -1,4 +1,4 @@
-FROM buildpack-deps:buster AS isolate
+FROM buildpack-deps:bookworm AS isolate
 # buildpack-deps already includes curl — no git required.
 # The tarball is pinned to the exact commit hash so the build is fully reproducible.
 # This is a build-time-only download; the running container makes no outbound calls.
