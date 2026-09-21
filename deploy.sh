@@ -97,6 +97,23 @@ check_disk_space() {
     fi
 }
 
+check_ulimits() {
+    # 500 concurrent WebSocket sessions each holding a file descriptor —
+    # the kernel hard limit must be at least 65535 or the API will hit EMFILE.
+    if [[ "$PLATFORM" == "linux" ]]; then
+        local hard_limit
+        hard_limit=$(ulimit -Hn 2>/dev/null || echo "0")
+        if [[ "$hard_limit" != "unlimited" && "${hard_limit:-0}" -lt 65535 ]]; then
+            warn "Open file descriptor hard limit is ${hard_limit} (need ≥ 65535 for 500 concurrent sessions)"
+            info "Fix — add these lines to /etc/security/limits.conf, then reboot or re-login:"
+            info "  *    soft    nofile    65536"
+            info "  *    hard    nofile    65536"
+            info "Also add to /etc/sysctl.conf and run 'sudo sysctl -p':"
+            info "  fs.file-max = 200000"
+        fi
+    fi
+}
+
 kill_port() {
     local port="$1"
     local pids
@@ -204,6 +221,7 @@ cmd_start() {
     check_docker
     check_disk_space
     check_cgroup_v2
+    check_ulimits
     check_port_conflict 8080
     check_port_conflict 2000
 
