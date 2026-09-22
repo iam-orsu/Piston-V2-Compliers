@@ -112,6 +112,43 @@ class Runtime {
         };
     }
 
+    // Resolve env vars from the package directory synchronously.
+    // Called once per package at startup (sync context is acceptable there)
+    // so the env_vars getter never needs to shell out at request time.
+    static _resolve_env_vars(package_dir) {
+        const env_file = path.join(package_dir, '.env');
+        const env_script = path.join(package_dir, 'environment');
+
+        try {
+            const env_content = fss.read_file_sync(env_file).toString();
+            return env_content.trim().split('\n').filter(Boolean);
+        } catch (_) {
+            // No .env file — source the 'environment' bash script and diff against base env
+            try {
+                const to_map = s => {
+                    const m = new Map();
+                    s.split('\n').filter(Boolean).forEach(line => {
+                        const idx = line.indexOf('=');
+                        if (idx > 0) m.set(line.slice(0, idx), line.slice(idx + 1));
+                    });
+                    return m;
+                };
+                const base = to_map(cp.execSync('env', { timeout: 3000 }).toString());
+                const sourced = to_map(
+                    cp.execSync(`bash -c 'source ./environment 2>/dev/null; env'`,
+                        { cwd: package_dir, timeout: 3000 }).toString()
+                );
+                const diff = [];
+                for (const [k, v] of sourced) {
+                    if (base.get(k) !== v) diff.push(`${k}=${v}`);
+                }
+                return diff;
+            } catch (_2) {
+                return [];
+            }
+        }
+    }
+
     static load_package(package_dir) {
         let info = JSON.parse(
             fss.read_file_sync(path.join(package_dir, 'pkg-info.json'))
@@ -134,33 +171,36 @@ class Runtime {
             );
         }
 
+        // Resolve env vars once at load time — avoids cp.execSync at request time
+        const resolved_env_vars = Runtime._resolve_env_vars(package_dir);
+
         if (provides) {
             // Multiple languages in 1 package
             provides.forEach(lang => {
-                runtimes.push(
-                    new Runtime({
-                        language: lang.language,
-                        aliases: lang.aliases,
-                        version,
-                        pkgdir: package_dir,
-                        runtime: language,
-                        ...Runtime.compute_all_limits(
-                            lang.language,
-                            lang.limit_overrides
-                        ),
-                    })
-                );
+                const rt = new Runtime({
+                    language: lang.language,
+                    aliases: lang.aliases,
+                    version,
+                    pkgdir: package_dir,
+                    runtime: language,
+                    ...Runtime.compute_all_limits(
+                        lang.language,
+                        lang.limit_overrides
+                    ),
+                });
+                rt._env_vars = resolved_env_vars;
+                runtimes.push(rt);
             });
         } else {
-            runtimes.push(
-                new Runtime({
-                    language,
-                    version,
-                    aliases,
-                    pkgdir: package_dir,
-                    ...Runtime.compute_all_limits(language, limit_overrides),
-                })
-            );
+            const rt = new Runtime({
+                language,
+                version,
+                aliases,
+                pkgdir: package_dir,
+                ...Runtime.compute_all_limits(language, limit_overrides),
+            });
+            rt._env_vars = resolved_env_vars;
+            runtimes.push(rt);
         }
 
         logger.debug(`Package ${language}-${version} was loaded`);
@@ -175,43 +215,9 @@ class Runtime {
     }
 
     get env_vars() {
-        if (!this._env_vars) {
-            const env_file = path.join(this.pkgdir, '.env');
-            const env_script = path.join(this.pkgdir, 'environment');
-
-            try {
-                const env_content = fss.read_file_sync(env_file).toString();
-                this._env_vars = env_content.trim().split('\n').filter(Boolean);
-            } catch (_) {
-                // No .env file — source the 'environment' bash script (Piston packages
-                // use this to set PATH/$PWD-relative vars like PATH=$PWD/bin:$PATH).
-                // We diff before/after so we only capture what the script actually changes.
-                try {
-                    const to_map = s => {
-                        const m = new Map();
-                        s.split('\n').filter(Boolean).forEach(line => {
-                            const idx = line.indexOf('=');
-                            if (idx > 0) m.set(line.slice(0, idx), line.slice(idx + 1));
-                        });
-                        return m;
-                    };
-                    const base = to_map(cp.execSync('env', { timeout: 3000 }).toString());
-                    const sourced = to_map(
-                        cp.execSync(`bash -c 'source ./environment 2>/dev/null; env'`,
-                            { cwd: this.pkgdir, timeout: 3000 }).toString()
-                    );
-                    const diff = [];
-                    for (const [k, v] of sourced) {
-                        if (base.get(k) !== v) diff.push(`${k}=${v}`);
-                    }
-                    this._env_vars = diff;
-                } catch (_2) {
-                    this._env_vars = [];
-                }
-            }
-        }
-
-        return this._env_vars;
+        // Always pre-populated by load_package via _resolve_env_vars at startup.
+        // The getter exists for backward compatibility with callers.
+        return this._env_vars || [];
     }
 
     toString() {
