@@ -4,7 +4,7 @@ const router = express.Router();
 const events = require('events');
 
 const runtime = require('../runtime');
-const { Job } = require('../job');
+const { Job, QueueFullError } = require('../job');
 const package = require('../package');
 const globals = require('../globals');
 const config = require('../config');
@@ -191,6 +191,13 @@ router.post('/execute', make_limiter(60, 60 * 1000), async (req, res) => {
 
         return res.status(200).send(result);
     } catch (error) {
+        if (error instanceof QueueFullError) {
+            // Tell the client to back off for 5 seconds before retrying.
+            // This prevents the 1000-student thundering herd from hammering
+            // the server when all slots are full.
+            res.set('Retry-After', '5');
+            return res.status(503).json({ message: error.message });
+        }
         logger.error(`Error executing job: ${job.uuid}:\n${error}`);
         return res.status(500).send({ message: 'Execution error' });
     } finally {

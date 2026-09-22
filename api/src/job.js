@@ -38,12 +38,26 @@ const release_box_id = (id) => {
     used_box_ids.delete(id);
 };
 
-// C2: Use a proper semaphore to prevent TOCTOU race on job slot counter.
-// remaining_job_spaces is decremented *before* yielding the event loop,
-// and cleanup passes the slot directly to the next waiter rather than
-// incrementing and hoping a later check wins.
+// Semaphore for concurrent job slots.
+// remaining_job_spaces is decremented *before* yielding the event loop so no
+// two prime() calls can both see a positive count and both proceed.
+// cleanup() hands the slot directly to the next waiter to avoid TOCTOU.
 let remaining_job_spaces = config.max_concurrent_jobs;
 let job_queue = [];
+
+// Maximum number of requests that may wait in the queue before we start
+// returning 503. Prevents the queue from growing unboundedly under a
+// thundering-herd (e.g. 1000 students all pressing Run at once).
+// Waiters beyond this cap get a QueueFull error that the caller should
+// surface as HTTP 503 with Retry-After.
+const MAX_QUEUE_DEPTH = config.max_concurrent_jobs * 2;
+
+class QueueFullError extends Error {
+    constructor() {
+        super('Server is at capacity — too many jobs queued. Please retry in a moment.');
+        this.name = 'QueueFullError';
+    }
+}
 
 class Job {
     #dirty_boxes;
@@ -118,10 +132,13 @@ class Job {
     }
 
     async prime() {
-        // C2: Atomically claim a slot. Decrement *before* any await so no
-        // concurrent prime() can observe the same positive count and both proceed.
         if (remaining_job_spaces < 1) {
-            this.logger.info(`Awaiting job slot`);
+            // Reject immediately if the queue is already at its depth limit.
+            // This surfaces as HTTP 503 to the client rather than an infinite wait.
+            if (job_queue.length >= MAX_QUEUE_DEPTH) {
+                throw new QueueFullError();
+            }
+            this.logger.info(`Awaiting job slot (queue depth: ${job_queue.length + 1})`);
             await new Promise(resolve => {
                 job_queue.push(resolve);
             });
@@ -507,4 +524,5 @@ class Job {
 
 module.exports = {
     Job,
+    QueueFullError,
 };
