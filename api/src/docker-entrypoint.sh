@@ -23,14 +23,21 @@ ISOLATE_DIR="isolate-${HOSTNAME:-default}"
 sed -i "s|cg_root = /sys/fs/cgroup/isolate$|cg_root = /sys/fs/cgroup/${ISOLATE_DIR}|" \
     /usr/local/etc/isolate
 
-cd /sys/fs/cgroup && \
-mkdir -p "${ISOLATE_DIR}/" && \
-echo $$ > "${ISOLATE_DIR}/cgroup.procs" && \
-echo '+cpuset +cpu +io +memory +pids' > cgroup.subtree_control && \
-cd "${ISOLATE_DIR}" && \
-mkdir -p init && \
-echo $$ > init/cgroup.procs && \
-echo '+cpuset +memory' > cgroup.subtree_control && \
-echo "Initialized cgroup at /sys/fs/cgroup/${ISOLATE_DIR}" && \
-chown -R piston:piston /piston && \
+# Clean up leftover cgroup dirs from a previous container run.
+# Cgroup v2: you cannot write to cgroup.procs of a non-leaf cgroup (one that has
+# child cgroups). On restart the old subtree is still on the host — remove it first.
+for old in "/sys/fs/cgroup/${ISOLATE_DIR}/init" "/sys/fs/cgroup/${ISOLATE_DIR}"; do
+    [ -d "$old" ] && rmdir "$old" 2>/dev/null || true
+done
+
+# Enable controllers on the root cgroup first, then create the subtree.
+# Move directly into the leaf cgroup (init) — never into the parent — to
+# avoid the cgroup v2 "no internal processes" constraint.
+echo '+cpuset +cpu +io +memory +pids' > /sys/fs/cgroup/cgroup.subtree_control
+mkdir -p "/sys/fs/cgroup/${ISOLATE_DIR}/init"
+echo $$ > "/sys/fs/cgroup/${ISOLATE_DIR}/init/cgroup.procs"
+echo '+cpuset +memory' > "/sys/fs/cgroup/${ISOLATE_DIR}/cgroup.subtree_control"
+echo "Initialized cgroup at /sys/fs/cgroup/${ISOLATE_DIR}"
+
+chown -R piston:piston /piston
 exec su -- piston -c 'ulimit -n 65536 2>/dev/null || true; exec node /piston_api/src'
