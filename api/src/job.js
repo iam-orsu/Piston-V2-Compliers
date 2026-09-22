@@ -474,19 +474,21 @@ class Job {
             remaining_job_spaces++;
         }
 
-        // C3: Properly await isolate --cleanup by wrapping cp.exec in a Promise
+        // Await isolate --cleanup with a 10 s timeout — a hung cleanup must not
+        // hold the job slot indefinitely and starve subsequent requests.
         await Promise.all(
             this.#dirty_boxes.map(box => {
                 return new Promise(resolve => {
                     cp.exec(
                         `isolate --cleanup --cg -b${box.id}`,
+                        { timeout: 10000 },
                         (error, stdout, stderr) => {
                             if (error) {
                                 this.logger.error(
                                     `Failed to run isolate --cleanup: ${error.message} on box #${box.id}\nstdout: ${stdout}\nstderr: ${stderr}`
                                 );
                             }
-                            // C4: Release the box ID regardless of cleanup success
+                            // Release the box ID regardless of cleanup success
                             release_box_id(box.id);
                             resolve();
                         }
