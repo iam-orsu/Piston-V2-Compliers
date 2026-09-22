@@ -4,7 +4,7 @@ const router = express.Router();
 const events = require('events');
 
 const runtime = require('../runtime');
-const { Job, QueueFullError } = require('../job');
+const { Job, QueueFullError, get_queue_stats } = require('../job');
 const Package = require('../package');
 const globals = require('../globals');
 const config = require('../config');
@@ -359,6 +359,18 @@ router.ws('/connect', async (ws, req) => {
             safe_ws_send(ws, JSON.stringify({ type: 'error', message: error.message }));
             ws.close(4002, 'Notified Error');
         }
+    });
+});
+
+// Health + live metrics — used by nginx wait-for-backends, Docker healthcheck,
+// and any external monitoring (Grafana, UptimeRobot, etc.).
+router.get('/health', (req, res) => {
+    const stats = get_queue_stats();
+    const status = stats.queued >= stats.queue_max ? 'degraded' : 'ok';
+    return res.status(status === 'ok' ? 200 : 503).json({
+        status,
+        runtimes: runtime.length,
+        ...stats,
     });
 });
 

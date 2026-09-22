@@ -522,7 +522,18 @@ class Job {
     }
 }
 
+// Returns a live snapshot of job slot utilisation for health/metrics endpoints.
+function get_queue_stats() {
+    return {
+        active: config.max_concurrent_jobs - remaining_job_spaces,
+        queued: job_queue.length,
+        capacity: config.max_concurrent_jobs,
+        queue_max: MAX_QUEUE_DEPTH,
+    };
+}
+
 module.exports = {
     Job,
     QueueFullError,
+    get_queue_stats,
 };
