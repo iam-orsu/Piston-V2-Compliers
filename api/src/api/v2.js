@@ -5,7 +5,7 @@ const events = require('events');
 
 const runtime = require('../runtime');
 const { Job, QueueFullError } = require('../job');
-const package = require('../package');
+const Package = require('../package');
 const globals = require('../globals');
 const config = require('../config');
 const logger = require('logplease').create('api/v2');
@@ -378,7 +378,7 @@ router.get('/runtimes', (req, res) => {
 // Rate limit read-only package listing — returns locally installed packages
 router.get('/packages', make_limiter(30, 60 * 1000), async (req, res) => {
     logger.debug('Request to list packages');
-    let packages = await package.get_package_list();
+    let packages = await Package.get_package_list();
 
     packages = packages.map(pkg => {
         return {
@@ -403,7 +403,7 @@ router.post('/packages', make_limiter(5, 60 * 1000), async (req, res) => {
         return res.status(400).json({ message: 'version is required as a string' });
     }
 
-    const pkg = new package({ language, version });
+    const pkg = new Package({ language, version });
     if (pkg.version === null) {
         return res.status(400).json({ message: `Invalid semver version: ${version}` });
     }
