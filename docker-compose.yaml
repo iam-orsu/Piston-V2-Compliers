@@ -46,11 +46,11 @@ services:
       - seccomp=unconfined
       - apparmor=unconfined
 
-    # Private cgroup namespace: each replica sees its own /sys/fs/cgroup root.
-    # Without this, all 3 replicas would race to create the same 'isolate/'
-    # cgroup directory and corrupt each other's job accounting.
-    cgroup: private
-    # Unique parent cgroup on the host so isolate's cgroup subtrees never collide.
+    # Host cgroup namespace: the container sees and can write to the full
+    # /sys/fs/cgroup tree. Required for isolate to create its 'isolate/'
+    # subtree. cgroup: private makes the root read-only, breaking the entrypoint.
+    # Unique parent cgroup on the host so the container's own processes are
+    # organized under a distinct systemd slice.
     cgroup_parent: piston-api1.slice
 
     mem_limit: ${PISTON_API_MEM_LIMIT:-42g}
@@ -103,7 +103,6 @@ services:
     security_opt:
       - seccomp=unconfined
       - apparmor=unconfined
-    cgroup: private
     cgroup_parent: piston-api2.slice
     mem_limit: ${PISTON_API_MEM_LIMIT:-42g}
     memswap_limit: ${PISTON_API_MEM_LIMIT:-42g}
@@ -146,7 +145,6 @@ services:
     security_opt:
       - seccomp=unconfined
       - apparmor=unconfined
-    cgroup: private
     cgroup_parent: piston-api3.slice
     mem_limit: ${PISTON_API_MEM_LIMIT:-42g}
     memswap_limit: ${PISTON_API_MEM_LIMIT:-42g}

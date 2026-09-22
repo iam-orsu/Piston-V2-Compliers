@@ -16,16 +16,21 @@ if [ ! -e "$CGROUP_FS/cgroup.subtree_control" ]; then
   exit 1
 fi
 
-# H1: Use mkdir -p so container restart doesn't fail when the cgroup dirs
-# already exist from the previous container run on the same host.
+# Each replica uses its own cgroup subtree named after the container hostname
+# (api1, api2, api3) so box IDs never collide between replicas on the same host.
+# isolate's cg_root is hardcoded in /usr/local/etc/isolate — patch it at startup.
+ISOLATE_DIR="isolate-${HOSTNAME:-default}"
+sed -i "s|cg_root = /sys/fs/cgroup/isolate$|cg_root = /sys/fs/cgroup/${ISOLATE_DIR}|" \
+    /usr/local/etc/isolate
+
 cd /sys/fs/cgroup && \
-mkdir -p isolate/ && \
-echo 1 > isolate/cgroup.procs && \
+mkdir -p "${ISOLATE_DIR}/" && \
+echo $$ > "${ISOLATE_DIR}/cgroup.procs" && \
 echo '+cpuset +cpu +io +memory +pids' > cgroup.subtree_control && \
-cd isolate && \
+cd "${ISOLATE_DIR}" && \
 mkdir -p init && \
-echo 1 > init/cgroup.procs && \
+echo $$ > init/cgroup.procs && \
 echo '+cpuset +memory' > cgroup.subtree_control && \
-echo "Initialized cgroup" && \
+echo "Initialized cgroup at /sys/fs/cgroup/${ISOLATE_DIR}" && \
 chown -R piston:piston /piston && \
 exec su -- piston -c 'ulimit -n 65536 2>/dev/null || true; exec node /piston_api/src'
