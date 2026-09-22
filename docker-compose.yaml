@@ -37,20 +37,17 @@ services:
     hostname: api1
     restart: unless-stopped
 
-    # Isolate needs SYS_ADMIN for mount namespaces + cgroup control.
-    # NET_ADMIN is needed to configure the job network namespace.
-    cap_add:
-      - SYS_ADMIN
-      - NET_ADMIN
+    # privileged: required so isolate can create cgroup subtrees and mount
+    # namespaces. cap_add alone is not enough — Docker's capability grants
+    # don't cover all the kernel operations isolate needs.
+    privileged: true
     security_opt:
       - seccomp=unconfined
       - apparmor=unconfined
 
     # Host cgroup namespace: the container sees and can write to the full
-    # /sys/fs/cgroup tree. Required for isolate to create its 'isolate/'
-    # subtree. cgroup: private makes the root read-only, breaking the entrypoint.
-    # Unique parent cgroup on the host so the container's own processes are
-    # organized under a distinct systemd slice.
+    # /sys/fs/cgroup tree. Docker 20.10+ defaults to private; must be explicit.
+    cgroup: host
     cgroup_parent: piston-api1.slice
 
     mem_limit: ${PISTON_API_MEM_LIMIT:-42g}
@@ -97,12 +94,11 @@ services:
     container_name: piston_api2
     hostname: api2
     restart: unless-stopped
-    cap_add:
-      - SYS_ADMIN
-      - NET_ADMIN
+    privileged: true
     security_opt:
       - seccomp=unconfined
       - apparmor=unconfined
+    cgroup: host
     cgroup_parent: piston-api2.slice
     mem_limit: ${PISTON_API_MEM_LIMIT:-42g}
     memswap_limit: ${PISTON_API_MEM_LIMIT:-42g}
@@ -139,12 +135,11 @@ services:
     container_name: piston_api3
     hostname: api3
     restart: unless-stopped
-    cap_add:
-      - SYS_ADMIN
-      - NET_ADMIN
+    privileged: true
     security_opt:
       - seccomp=unconfined
       - apparmor=unconfined
+    cgroup: host
     cgroup_parent: piston-api3.slice
     mem_limit: ${PISTON_API_MEM_LIMIT:-42g}
     memswap_limit: ${PISTON_API_MEM_LIMIT:-42g}
