@@ -625,7 +625,7 @@ async function loadRuntimes() {
         runtimes = await res.json();
 
         // Filter out .net runtimes (dotnet 5.x incompatible with OpenSSL 3 on this server)
-        const BLOCKED = new Set(['csharp.net', 'fsharp.net', 'basic.net', 'fsi']);
+        const BLOCKED = new Set(['csharp.net', 'fsharp.net', 'basic.net', 'fsi', 'scala']);
         runtimesByLang = {};
         runtimes.forEach(rt => {
             if (BLOCKED.has(rt.language)) return;

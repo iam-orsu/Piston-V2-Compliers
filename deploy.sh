@@ -46,7 +46,6 @@ DEFAULT_RUNTIMES=(
     "rust=1.68.2"
     "bash=5.2.0"
     "mono="
-    "scala="
     "rscript="
     "ruby="
 )
