@@ -1,162 +1,222 @@
-x-api-base: &api-base
-    build:
-        context: ./api
-        dockerfile: Dockerfile
-    restart: always
-    # privileged is required: isolate must create cgroup subtrees under
-    # /sys/fs/cgroup/isolate/. Docker 20.10+ defaults to a private cgroup
-    # namespace; compose v5 schema rejects cgroupns_mode. privileged implicitly
-    # sets cgroupns=host — the only working path for isolate on cgroup v2.
-    # Student code sandboxing is handled entirely by isolate; Docker privileged
-    # only grants the ability to manage the container's own cgroup tree.
-    privileged: true
-    volumes:
-        - piston-packages:/piston/packages
-    tmpfs:
-        - /tmp:exec
-    networks:
-        - piston-net
-    healthcheck:
-        test: ["CMD", "node", "-e", "require('http').get('http://localhost:2000/api/v2/runtimes', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
-        interval: 15s
-        timeout: 5s
-        retries: 5
-        start_period: 30s
+# Production docker-compose — 3 Piston API replicas + nginx load balancer
+#
+# Before first run:
+#   1. Copy .env.example to .env  →  cp .env.example .env
+#   2. Create the packages directory  →  mkdir -p ./data/piston/packages
+#   3. docker compose up -d
+#      (kernel tunables are applied automatically by the 'host-init' service)
+#
+# Logs:    docker compose logs -f api1
+# Install a package (run on any one replica):
+#   docker compose exec api1 node /piston_api/src ppman install python 3.10.0
 
-# ── Memory budget for 128 GB RAM / 96 vCPU production host ─────────────────
-#
-#   Component                    Count   Per-unit    Total
-#   ─────────────────────────────────────────────────────
-#   OS + nginx + misc            —       ~4 GB       4 GB
-#   API replicas (Node process)  3       ~1 GB       3 GB
-#   API concurrent jobs          300     96 MB       ~28 GB
-#   Terminal Node process        1       ~4 GB       4 GB
-#   Terminal sandbox containers  1000    96 MB       ~94 GB  (theoretical max — in practice <500 concurrent)
-#   ─────────────────────────────────────────────────────
-#   Worst-case peak                                  ~133 GB  ← just over; realistic peak ~90 GB
-#
-#   The terminal sessions are never all active at once (students are typing, not running).
-#   Reduce MAX_SESSIONS or per-container memory further on smaller hosts.
+version: '3.8'
 
 services:
-    # ── Replica 1 (port 2000 exposed for CLI/admin) ──────────────────────────
-    api1:
-        <<: *api-base
-        container_name: piston_api_1
-        ports:
-            - "127.0.0.1:2000:2000"
-        # 100 concurrent jobs × 96 MB run limit = ~9.6 GB peak per replica.
-        # 12g ceiling gives generous headroom for the Node process itself + compile jobs.
-        mem_limit: ${PISTON_API_MEM_LIMIT:-12g}
-        environment:
-            PISTON_RUNNER_UID_MIN: "1001"
-            PISTON_RUNNER_UID_MAX: "1500"
-            PISTON_RUNNER_GID_MIN: "1001"
-            PISTON_RUNNER_GID_MAX: "1500"
-            PISTON_MAX_CONCURRENT_JOBS: "100"
-            # 96 MB run limit: enough for Python/JS/Java classroom workloads.
-            # Raise to 256 MB for C++/Rust heavy compilation on a bigger host.
-            PISTON_RUN_MEMORY_LIMIT: "100663296"
-            # 192 MB compile limit: GCC/Rust need more headroom during compilation.
-            PISTON_COMPILE_MEMORY_LIMIT: "201326592"
-            PISTON_RUN_TIMEOUT: "15000"
-            PISTON_COMPILE_TIMEOUT: "30000"
-            PISTON_RUN_CPU_TIME: "10000"
-            PISTON_COMPILE_CPU_TIME: "30000"
-            PISTON_OUTPUT_MAX_SIZE: "65536"
 
-    # ── Replica 2 (internal only) ─────────────────────────────────────────────
-    api2:
-        <<: *api-base
-        container_name: piston_api_2
-        mem_limit: ${PISTON_API_MEM_LIMIT:-12g}
-        environment:
-            PISTON_RUNNER_UID_MIN: "1501"
-            PISTON_RUNNER_UID_MAX: "2000"
-            PISTON_RUNNER_GID_MIN: "1501"
-            PISTON_RUNNER_GID_MAX: "2000"
-            PISTON_MAX_CONCURRENT_JOBS: "100"
-            PISTON_RUN_MEMORY_LIMIT: "100663296"
-            PISTON_COMPILE_MEMORY_LIMIT: "201326592"
-            PISTON_RUN_TIMEOUT: "15000"
-            PISTON_COMPILE_TIMEOUT: "30000"
-            PISTON_RUN_CPU_TIME: "10000"
-            PISTON_COMPILE_CPU_TIME: "30000"
-            PISTON_OUTPUT_MAX_SIZE: "65536"
+  # ── Host kernel tuning (runs once, exits, never restarts) ────────────────────
+  # A privileged container has direct access to the host's /proc/sys, so sysctl
+  # writes here take effect on the real kernel — same as running them manually.
+  # All API replicas depend on this completing before they start.
+  host-init:
+    image: busybox
+    privileged: true
+    restart: "no"
+    command: >
+      sh -c "
+        sysctl -w kernel.pid_max=131072 &&
+        sysctl -w fs.file-max=2000000 &&
+        sysctl -w kernel.threads-max=131072 &&
+        echo 'host-init: kernel tunables applied'
+      "
 
-    # ── Replica 3 (internal only) ─────────────────────────────────────────────
-    api3:
-        <<: *api-base
-        container_name: piston_api_3
-        mem_limit: ${PISTON_API_MEM_LIMIT:-12g}
-        environment:
-            PISTON_RUNNER_UID_MIN: "2001"
-            PISTON_RUNNER_UID_MAX: "2500"
-            PISTON_RUNNER_GID_MIN: "2001"
-            PISTON_RUNNER_GID_MAX: "2500"
-            PISTON_MAX_CONCURRENT_JOBS: "100"
-            PISTON_RUN_MEMORY_LIMIT: "100663296"
-            PISTON_COMPILE_MEMORY_LIMIT: "201326592"
-            PISTON_RUN_TIMEOUT: "15000"
-            PISTON_COMPILE_TIMEOUT: "30000"
-            PISTON_RUN_CPU_TIME: "10000"
-            PISTON_COMPILE_CPU_TIME: "30000"
-            PISTON_OUTPUT_MAX_SIZE: "65536"
+  # ── API Replica 1 ────────────────────────────────────────────────────────────
+  api1:
+    build: api
+    container_name: piston_api1
+    hostname: api1
+    restart: unless-stopped
 
-    # ── Sandbox Terminal Service (node-pty + WebSocket → Docker) ─────────────
-    terminal-service:
-        build:
-            context: ./terminal-service
-        container_name: piston_terminal
-        restart: always
-        volumes:
-            - /var/run/docker.sock:/var/run/docker.sock
-        environment:
-            SANDBOX_IMAGE: piston-sandbox:latest
-            IDLE_TIMEOUT_MS: "300000"
-            MAX_LIFETIME_MS: "1800000"
-            # 500 concurrent sessions at 96 MB each = ~47 GB. Safe under 128 GB
-            # when API replicas are running at normal load. Raise to 1000 only if
-            # terminal-service is the sole heavy workload on this host.
-            MAX_SESSIONS: "500"
-            PORT: "3000"
-            NODE_OLD_SPACE_MB: "3584"
-        mem_limit: ${TERMINAL_MEM_LIMIT:-4g}
-        networks:
-            - piston-net
-        healthcheck:
-            test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
-            interval: 15s
-            timeout: 5s
-            retries: 3
-            start_period: 20s
+    # Isolate needs SYS_ADMIN for mount namespaces + cgroup control.
+    # NET_ADMIN is needed to configure the job network namespace.
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
 
-    # ── Frontend (nginx load balancer + static files) ─────────────────────────
-    frontend:
-        build:
-            context: ./nginx
-        container_name: piston_frontend
-        restart: always
-        ports:
-            - "8080:80"
-        volumes:
-            - ./frontend:/usr/share/nginx/html:ro
-        depends_on:
-            api1:
-                condition: service_healthy
-            terminal-service:
-                condition: service_healthy
-        networks:
-            - piston-net
-        healthcheck:
-            test: ["CMD", "sh", "-c", "nc -z localhost 80 || exit 1"]
-            interval: 30s
-            timeout: 5s
-            retries: 3
+    # Private cgroup namespace: each replica sees its own /sys/fs/cgroup root.
+    # Without this, all 3 replicas would race to create the same 'isolate/'
+    # cgroup directory and corrupt each other's job accounting.
+    cgroup: private
+    # Unique parent cgroup on the host so isolate's cgroup subtrees never collide.
+    cgroup_parent: piston-api1.slice
 
-networks:
-    piston-net:
-        driver: bridge
+    mem_limit: ${PISTON_API_MEM_LIMIT:-42g}
+    memswap_limit: ${PISTON_API_MEM_LIMIT:-42g}   # disable swap beyond mem_limit
 
+    ulimits:
+      # Max OS processes this container may create.
+      # 256 jobs × 64 processes/job = 16384 minimum; 65536 gives generous headroom.
+      nproc: 65536
+      # File descriptors: 256 jobs × 2048 open files/job = 524288 minimum.
+      nofile:
+        soft: 1048576
+        hard: 1048576
+
+    sysctls:
+      net.core.somaxconn: 65535
+
+    volumes:
+      - packages:/piston/packages
+
+    environment:
+      - PISTON_MAX_CONCURRENT_JOBS=256
+      - PISTON_DISABLE_NETWORKING=true
+      - PISTON_RUN_MEMORY_LIMIT=268435456    # 256 MB per job run stage
+      - PISTON_COMPILE_MEMORY_LIMIT=536870912 # 512 MB per job compile stage
+
+    depends_on:
+      host-init:
+        condition: service_completed_successfully
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:2000/api/v2/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    networks:
+      - piston_net
+
+  # ── API Replica 2 ────────────────────────────────────────────────────────────
+  api2:
+    build: api
+    container_name: piston_api2
+    hostname: api2
+    restart: unless-stopped
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    cgroup: private
+    cgroup_parent: piston-api2.slice
+    mem_limit: ${PISTON_API_MEM_LIMIT:-42g}
+    memswap_limit: ${PISTON_API_MEM_LIMIT:-42g}
+    ulimits:
+      nproc: 65536
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    sysctls:
+      net.core.somaxconn: 65535
+    volumes:
+      - packages:/piston/packages
+    environment:
+      - PISTON_MAX_CONCURRENT_JOBS=256
+      - PISTON_DISABLE_NETWORKING=true
+      - PISTON_RUN_MEMORY_LIMIT=268435456
+      - PISTON_COMPILE_MEMORY_LIMIT=536870912
+    depends_on:
+      host-init:
+        condition: service_completed_successfully
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:2000/api/v2/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - piston_net
+
+  # ── API Replica 3 ────────────────────────────────────────────────────────────
+  api3:
+    build: api
+    container_name: piston_api3
+    hostname: api3
+    restart: unless-stopped
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    cgroup: private
+    cgroup_parent: piston-api3.slice
+    mem_limit: ${PISTON_API_MEM_LIMIT:-42g}
+    memswap_limit: ${PISTON_API_MEM_LIMIT:-42g}
+    ulimits:
+      nproc: 65536
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    sysctls:
+      net.core.somaxconn: 65535
+    volumes:
+      - packages:/piston/packages
+    environment:
+      - PISTON_MAX_CONCURRENT_JOBS=256
+      - PISTON_DISABLE_NETWORKING=true
+      - PISTON_RUN_MEMORY_LIMIT=268435456
+      - PISTON_COMPILE_MEMORY_LIMIT=536870912
+    depends_on:
+      host-init:
+        condition: service_completed_successfully
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:2000/api/v2/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - piston_net
+
+  # ── nginx load balancer + frontend ──────────────────────────────────────────
+  nginx:
+    build: nginx
+    container_name: piston_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"      # UI + API  (for the built-in frontend)
+      - "2000:2000"  # API only  (for developers / external UIs)
+    volumes:
+      # Frontend HTML is served from here. Edit frontend/index.html to update the UI.
+      - ./frontend:/usr/share/nginx/html:ro
+    depends_on:
+      host-init:
+        condition: service_completed_successfully
+      api1:
+        condition: service_healthy
+      api2:
+        condition: service_healthy
+      api3:
+        condition: service_healthy
+    networks:
+      - piston_net
+
+# ── Volumes ──────────────────────────────────────────────────────────────────
 volumes:
-    piston-packages:
+  packages:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      # All 3 replicas share one packages directory so an install on any replica
+      # is immediately visible to the others. Create this directory before first run:
+      #   mkdir -p ./data/piston/packages
+      device: ./data/piston/packages
+
+# ── Networks ─────────────────────────────────────────────────────────────────
+networks:
+  piston_net:
+    driver: bridge
+    # Increase the ARP and connection tables — needed when 768 concurrent job
+    # containers all communicate through this bridge at peak load.
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "true"

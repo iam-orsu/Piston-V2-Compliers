@@ -150,10 +150,10 @@ check_port_conflict() {
 
 # ── API Helpers ───────────────────────────────────────────────────────────────
 wait_for_api() {
-    echo -e "${YELLOW}⏳  Waiting for Piston API (replica 1)...${NC}"
+    echo -e "${YELLOW}⏳  Waiting for Piston API...${NC}"
     local attempts=0
     while [[ $attempts -lt 90 ]]; do
-        if curl -sf http://localhost:2000/api/v2/runtimes &>/dev/null; then
+        if curl -sf http://localhost/api/v2/runtimes &>/dev/null; then
             echo -e "${GREEN}✅  API is ready.${NC}"
             return 0
         fi
@@ -165,7 +165,7 @@ wait_for_api() {
 }
 
 runtime_count() {
-    curl -sf http://localhost:2000/api/v2/runtimes 2>/dev/null \
+    curl -sf http://localhost/api/v2/runtimes 2>/dev/null \
         | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d))" 2>/dev/null \
         || echo "0"
 }
@@ -185,7 +185,7 @@ install_runtime() {
     local ver="${2:-}"
 
     # Skip if already installed
-    if curl -sf http://localhost:2000/api/v2/runtimes 2>/dev/null \
+    if curl -sf http://localhost/api/v2/runtimes 2>/dev/null \
             | grep -q "\"language\":\"${lang}\""; then
         step "$lang already installed — skipping."
         return 0
@@ -222,7 +222,7 @@ if vers:
     json_body=$(printf '{"language":"%s","version":"%s"}' \
         "$(printf '%s' "$lang" | sed 's/["\\]/\\&/g')" \
         "$(printf '%s' "$ver"  | sed 's/["\\]/\\&/g')")
-    response=$(curl -sf -X POST http://localhost:2000/api/v2/packages \
+    response=$(curl -sf -X POST http://localhost/api/v2/packages \
         -H 'Content-Type: application/json' \
         -d "$json_body" 2>&1)
     local exit_code=$?
@@ -301,8 +301,7 @@ cmd_start() {
     check_disk_space
     check_cgroup_v2
     check_ulimits
-    check_port_conflict 8080
-    check_port_conflict 2000
+    check_port_conflict 80
 
     if [[ "$PLATFORM" == "wsl2" ]]; then
         info "Windows/WSL2 mode: packages stored in Docker named volume (Linux fs)"
@@ -311,6 +310,8 @@ cmd_start() {
     fi
 
     build_sandbox_image
+
+    mkdir -p ./data/piston/packages
 
     log "Building and starting containers..."
     $DC up -d --build --remove-orphans
@@ -330,10 +331,10 @@ print_ready_banner() {
         ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
     fi
 
-    # Wait up to 15s for the frontend nginx to be reachable
+    # Wait up to 15s for nginx to be reachable
     local fe_ok=0
     for _ in {1..15}; do
-        if curl -sf "http://localhost:8080" &>/dev/null; then
+        if curl -sf "http://localhost" &>/dev/null; then
             fe_ok=1; break
         fi
         sleep 1
@@ -345,25 +346,25 @@ print_ready_banner() {
     echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "   ${BOLD}📝  Code Editor UI${NC}"
-    echo -e "       ${CYAN}${BOLD}http://${ip}:8080${NC}"
-    if [[ "$PLATFORM" != "wsl2" && "$ip" != "localhost" ]]; then
-        echo -e "       ${CYAN}(open this URL in your browser — not localhost)${NC}"
-    fi
+    echo -e "       ${CYAN}${BOLD}http://${ip}${NC}"
     echo ""
-    echo -e "   ${BOLD}🔌  Piston API (admin only)${NC}"
-    echo -e "       ${CYAN}http://${ip}:2000${NC}"
+    echo -e "   ${BOLD}🔌  API Endpoint (for developers / external UIs)${NC}"
+    echo -e "       ${CYAN}${BOLD}http://${ip}:2000/api/v2/${NC}"
+    echo -e "       POST /api/v2/execute   — run code"
+    echo -e "       GET  /api/v2/runtimes  — list languages"
+    echo -e "       WS   /api/v2/connect   — interactive terminal"
     echo ""
     $DC ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || $DC ps
     echo ""
     if [[ "$fe_ok" -eq 0 ]]; then
-        warn "Frontend did not respond on port 8080 — check: ./deploy.sh logs frontend"
+        warn "Frontend did not respond on port 80 — check: ./deploy.sh logs nginx"
     else
         echo -e "${GREEN}${BOLD}✅  All systems operational. Open the URL above in your browser.${NC}"
     fi
     if [[ "$PLATFORM" == "linux" ]]; then
         echo ""
         echo -e "   ${YELLOW}🔒 Firewall tip:${NC}"
-        echo -e "      sudo ufw allow 8080/tcp && sudo ufw deny 2000/tcp"
+        echo -e "      sudo ufw allow 80/tcp"
     fi
     echo ""
 }
@@ -386,6 +387,7 @@ cmd_stop() {
 cmd_restart() {
     check_docker
     build_sandbox_image
+    mkdir -p ./data/piston/packages
     log "Rebuilding and restarting (applying changes)..."
     $DC up -d --build --remove-orphans
     wait_for_api
@@ -408,7 +410,7 @@ cmd_status() {
         echo -e "       Run './deploy.sh runtimes' to list them."
     fi
     echo ""
-    echo -e "   ${CYAN}ℹ  3 API replicas running — capacity: ~450 concurrent students${NC}"
+    echo -e "   ${CYAN}ℹ  3 API replicas running — capacity: ~2300 concurrent students${NC}"
     echo -e "   ${CYAN}ℹ  Per-job memory limit: 256 MB · Run timeout: 15s${NC}"
     echo ""
 }
@@ -447,7 +449,7 @@ cmd_list() {
 cmd_runtimes() {
     check_docker
     echo -e "${BLUE}${BOLD}Installed runtimes:${NC}"
-    curl -sf http://localhost:2000/api/v2/runtimes 2>/dev/null \
+    curl -sf http://localhost/api/v2/runtimes 2>/dev/null \
         | python3 -c "
 import json, sys
 rts = json.load(sys.stdin)
@@ -484,7 +486,7 @@ cmd_help() {
     echo -e "${BOLD}Platform:${NC}  ${PLATFORM}"
     if [[ "$PLATFORM" == "linux" ]]; then
         echo -e "${BOLD}Prod tips:${NC}"
-        echo -e "  • Firewall: sudo ufw allow 8080/tcp && sudo ufw deny 2000/tcp"
+        echo -e "  • Firewall: sudo ufw allow 80/tcp"
         echo -e "  • cgroup v2: required — Ubuntu 22.04+ has it by default"
         echo -e "  • Auto-start: containers use 'restart: always' (survives reboots)"
         echo -e "  • Logs:       sudo journalctl -u docker or ./deploy.sh logs"
