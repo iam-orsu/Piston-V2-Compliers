@@ -48,12 +48,15 @@ class Session {
             // Process limits: kills fork bombs before they spread
             '--pids-limit', '100',
 
-            // Memory: 128 MB cap, no swap
-            '--memory',      '128m',
-            '--memory-swap', '128m',
+            // Memory: 96 MB cap, no swap.
+            // 1000 containers × 96 MB = 96 GB — sized for 128 GB host.
+            // Raise to 128m on a host with more headroom.
+            '--memory',      '96m',
+            '--memory-swap', '96m',
 
-            // CPU: 0.5 vCPU max — fair share across students
-            '--cpus', '0.5',
+            // CPU: 0.15 vCPU — interactive editing sessions are mostly idle.
+            // 1000 students × 0.15 = 150 vCPUs — fits on a 96-vCPU host at normal concurrency.
+            '--cpus', '0.15',
 
             // ulimits: belt-and-suspenders on processes, file descriptors, and CPU time
             '--ulimit', 'nproc=100:100',
