@@ -170,9 +170,13 @@ class Job {
         memory_limit,
         event_bus = null
     ) {
-        let stdout = '';
-        let stderr = '';
-        let output = '';
+        // Use arrays instead of string concatenation to avoid O(n²) allocations
+        // when output approaches output_max_size. Joined to strings before return.
+        let stdout_chunks = [];
+        let stderr_chunks = [];
+        let output_chunks = [];
+        let stdout_len = 0;
+        let stderr_len = 0;
         let memory = null;
         let code = null;
         let signal = null;
@@ -232,53 +236,47 @@ class Job {
             });
         }
 
-        proc.stderr.on('data', async data => {
+        proc.stderr.on('data', data => {
             if (event_bus !== null) {
                 event_bus.emit('stderr', data);
-            } else if (
-                stderr.length + data.length >
-                this.runtime.output_max_size
-            ) {
+            } else if (stderr_len + data.length > this.runtime.output_max_size) {
                 message = 'stderr length exceeded';
                 status = 'EL';
                 this.logger.info(message);
                 try {
                     process.kill(proc.pid, 'SIGABRT');
                 } catch (e) {
-                    // Could already be dead and just needs to be waited on
                     this.logger.debug(
                         `Got error while SIGABRTing process ${proc}:`,
                         e
                     );
                 }
             } else {
-                stderr += data;
-                output += data;
+                stderr_chunks.push(data);
+                output_chunks.push(data);
+                stderr_len += data.length;
             }
         });
 
-        proc.stdout.on('data', async data => {
+        proc.stdout.on('data', data => {
             if (event_bus !== null) {
                 event_bus.emit('stdout', data);
-            } else if (
-                stdout.length + data.length >
-                this.runtime.output_max_size
-            ) {
+            } else if (stdout_len + data.length > this.runtime.output_max_size) {
                 message = 'stdout length exceeded';
                 status = 'OL';
                 this.logger.info(message);
                 try {
                     process.kill(proc.pid, 'SIGABRT');
                 } catch (e) {
-                    // Could already be dead and just needs to be waited on
                     this.logger.debug(
                         `Got error while SIGABRTing process ${proc}:`,
                         e
                     );
                 }
             } else {
-                stdout += data;
-                output += data;
+                stdout_chunks.push(data);
+                output_chunks.push(data);
+                stdout_len += data.length;
             }
         });
 
@@ -339,10 +337,16 @@ class Job {
                 }
             }
         } catch (e) {
+            const stdout = Buffer.concat(stdout_chunks).toString();
+            const stderr = Buffer.concat(stderr_chunks).toString();
             throw new Error(
                 `Error reading metadata file: ${box.metadata_file_path}\nError: ${e.message}\nIsolate run stdout: ${stdout}\nIsolate run stderr: ${stderr}`
             );
         }
+
+        const stdout = Buffer.concat(stdout_chunks).toString();
+        const stderr = Buffer.concat(stderr_chunks).toString();
+        const output = Buffer.concat(output_chunks).toString();
 
         return {
             ...data,
