@@ -38,12 +38,26 @@ const release_box_id = (id) => {
     used_box_ids.delete(id);
 };
 
-// C2: Use a proper semaphore to prevent TOCTOU race on job slot counter.
-// remaining_job_spaces is decremented *before* yielding the event loop,
-// and cleanup passes the slot directly to the next waiter rather than
-// incrementing and hoping a later check wins.
+// Semaphore for concurrent job slots.
+// remaining_job_spaces is decremented *before* yielding the event loop so no
+// two prime() calls can both see a positive count and both proceed.
+// cleanup() hands the slot directly to the next waiter to avoid TOCTOU.
 let remaining_job_spaces = config.max_concurrent_jobs;
 let job_queue = [];
+
+// Maximum number of requests that may wait in the queue before we start
+// returning 503. Prevents the queue from growing unboundedly under a
+// thundering-herd (e.g. 1000 students all pressing Run at once).
+// Waiters beyond this cap get a QueueFull error that the caller should
+// surface as HTTP 503 with Retry-After.
+const MAX_QUEUE_DEPTH = config.max_concurrent_jobs * 2;
+
+class QueueFullError extends Error {
+    constructor() {
+        super('Server is at capacity — too many jobs queued. Please retry in a moment.');
+        this.name = 'QueueFullError';
+    }
+}
 
 class Job {
     #dirty_boxes;
@@ -83,6 +97,11 @@ class Job {
         this.state = job_states.READY;
         this.#dirty_boxes = [];
         this._cleanup_done = false;
+        // Tracks whether this job successfully claimed a semaphore slot.
+        // cleanup() must only release a slot that was actually claimed — if
+        // prime() threw QueueFullError before claiming, this stays false and
+        // cleanup() skips the slot-release, preventing counter inflation.
+        this._slot_claimed = false;
     }
 
     async #create_isolate_box() {
@@ -118,16 +137,21 @@ class Job {
     }
 
     async prime() {
-        // C2: Atomically claim a slot. Decrement *before* any await so no
-        // concurrent prime() can observe the same positive count and both proceed.
         if (remaining_job_spaces < 1) {
-            this.logger.info(`Awaiting job slot`);
+            // Reject immediately if the queue is already at its depth limit.
+            // This surfaces as HTTP 503 to the client rather than an infinite wait.
+            if (job_queue.length >= MAX_QUEUE_DEPTH) {
+                throw new QueueFullError();
+            }
+            this.logger.info(`Awaiting job slot (queue depth: ${job_queue.length + 1})`);
             await new Promise(resolve => {
                 job_queue.push(resolve);
             });
             // Slot was handed to us directly by cleanup() — do NOT decrement again.
+            this._slot_claimed = true;
         } else {
             remaining_job_spaces--;
+            this._slot_claimed = true;
         }
 
         this.logger.info(`Priming job`);
@@ -170,9 +194,13 @@ class Job {
         memory_limit,
         event_bus = null
     ) {
-        let stdout = '';
-        let stderr = '';
-        let output = '';
+        // Use arrays instead of string concatenation to avoid O(n²) allocations
+        // when output approaches output_max_size. Joined to strings before return.
+        let stdout_chunks = [];
+        let stderr_chunks = [];
+        let output_chunks = [];
+        let stdout_len = 0;
+        let stderr_len = 0;
         let memory = null;
         let code = null;
         let signal = null;
@@ -232,53 +260,47 @@ class Job {
             });
         }
 
-        proc.stderr.on('data', async data => {
+        proc.stderr.on('data', data => {
             if (event_bus !== null) {
                 event_bus.emit('stderr', data);
-            } else if (
-                stderr.length + data.length >
-                this.runtime.output_max_size
-            ) {
+            } else if (stderr_len + data.length > this.runtime.output_max_size) {
                 message = 'stderr length exceeded';
                 status = 'EL';
                 this.logger.info(message);
                 try {
                     process.kill(proc.pid, 'SIGABRT');
                 } catch (e) {
-                    // Could already be dead and just needs to be waited on
                     this.logger.debug(
                         `Got error while SIGABRTing process ${proc}:`,
                         e
                     );
                 }
             } else {
-                stderr += data;
-                output += data;
+                stderr_chunks.push(data);
+                output_chunks.push(data);
+                stderr_len += data.length;
             }
         });
 
-        proc.stdout.on('data', async data => {
+        proc.stdout.on('data', data => {
             if (event_bus !== null) {
                 event_bus.emit('stdout', data);
-            } else if (
-                stdout.length + data.length >
-                this.runtime.output_max_size
-            ) {
+            } else if (stdout_len + data.length > this.runtime.output_max_size) {
                 message = 'stdout length exceeded';
                 status = 'OL';
                 this.logger.info(message);
                 try {
                     process.kill(proc.pid, 'SIGABRT');
                 } catch (e) {
-                    // Could already be dead and just needs to be waited on
                     this.logger.debug(
                         `Got error while SIGABRTing process ${proc}:`,
                         e
                     );
                 }
             } else {
-                stdout += data;
-                output += data;
+                stdout_chunks.push(data);
+                output_chunks.push(data);
+                stdout_len += data.length;
             }
         });
 
@@ -304,12 +326,14 @@ class Job {
             for (const line of metadata_lines) {
                 if (!line) continue;
 
-                const [key, value] = line.split(':');
-                if (key === undefined || value === undefined) {
+                const colon_idx = line.indexOf(':');
+                if (colon_idx === -1) {
                     throw new Error(
                         `Failed to parse metadata file, received: ${line}`
                     );
                 }
+                const key = line.slice(0, colon_idx);
+                const value = line.slice(colon_idx + 1);
                 switch (key) {
                     case 'cg-mem':
                         memory = parse_int(value) * 1000;
@@ -337,10 +361,16 @@ class Job {
                 }
             }
         } catch (e) {
+            const stdout = Buffer.concat(stdout_chunks).toString();
+            const stderr = Buffer.concat(stderr_chunks).toString();
             throw new Error(
                 `Error reading metadata file: ${box.metadata_file_path}\nError: ${e.message}\nIsolate run stdout: ${stdout}\nIsolate run stderr: ${stderr}`
             );
         }
+
+        const stdout = Buffer.concat(stdout_chunks).toString();
+        const stderr = Buffer.concat(stderr_chunks).toString();
+        const output = Buffer.concat(output_chunks).toString();
 
         return {
             ...data,
@@ -410,7 +440,9 @@ class Job {
             );
             emit_event_bus_result('compile', compile);
             // M6: also treat signal kill (code===null) as a compile error
-            compile_errored = compile.code !== 0 || compile.code === null;
+            // Treat non-zero exit OR signal kill (code === null) as compile error.
+            // null !== 0 is true, so a single check covers both cases.
+            compile_errored = compile.code !== 0;
             if (!compile_errored) {
                 const old_box_dir = box.dir;
                 box = await this.#create_isolate_box();
@@ -456,29 +488,37 @@ class Job {
 
         this.logger.info(`Cleaning up job`);
 
-        // C2: Pass the slot directly to the next waiter if one exists,
-        // otherwise increment the counter. This avoids the TOCTOU window
-        // where two primes both see remaining_job_spaces >= 1.
-        if (job_queue.length > 0) {
-            job_queue.shift()();
-            // remaining_job_spaces stays the same — handed off to the waiter
-        } else {
-            remaining_job_spaces++;
+        // C2: Only release a slot if this job actually claimed one.
+        // If prime() threw QueueFullError before claiming, _slot_claimed stays
+        // false and we skip the release — preventing counter inflation.
+        if (this._slot_claimed) {
+            this._slot_claimed = false;
+            // Pass the slot directly to the next waiter if one exists,
+            // otherwise increment the counter. Avoids TOCTOU where two primes
+            // both see remaining_job_spaces >= 1 and both proceed.
+            if (job_queue.length > 0) {
+                job_queue.shift()();
+                // remaining_job_spaces stays the same — handed off to the waiter
+            } else {
+                remaining_job_spaces++;
+            }
         }
 
-        // C3: Properly await isolate --cleanup by wrapping cp.exec in a Promise
+        // Await isolate --cleanup with a 10 s timeout — a hung cleanup must not
+        // hold the job slot indefinitely and starve subsequent requests.
         await Promise.all(
             this.#dirty_boxes.map(box => {
                 return new Promise(resolve => {
                     cp.exec(
                         `isolate --cleanup --cg -b${box.id}`,
+                        { timeout: 10000 },
                         (error, stdout, stderr) => {
                             if (error) {
                                 this.logger.error(
                                     `Failed to run isolate --cleanup: ${error.message} on box #${box.id}\nstdout: ${stdout}\nstderr: ${stderr}`
                                 );
                             }
-                            // C4: Release the box ID regardless of cleanup success
+                            // Release the box ID regardless of cleanup success
                             release_box_id(box.id);
                             resolve();
                         }
@@ -495,6 +535,18 @@ class Job {
     }
 }
 
+// Returns a live snapshot of job slot utilisation for health/metrics endpoints.
+function get_queue_stats() {
+    return {
+        active: config.max_concurrent_jobs - remaining_job_spaces,
+        queued: job_queue.length,
+        capacity: config.max_concurrent_jobs,
+        queue_max: MAX_QUEUE_DEPTH,
+    };
+}
+
 module.exports = {
     Job,
+    QueueFullError,
+    get_queue_stats,
 };

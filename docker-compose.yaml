@@ -1,7 +1,7 @@
 x-api-base: &api-base
     build:
         context: ./api
-        dockerfile: Dockerfile          # Use the fully-patched main Dockerfile (Node 20, all security fixes)
+        dockerfile: Dockerfile
     restart: always
     # privileged is required: isolate must create cgroup subtrees under
     # /sys/fs/cgroup/isolate/. Docker 20.10+ defaults to a private cgroup
@@ -23,6 +23,21 @@ x-api-base: &api-base
         retries: 5
         start_period: 30s
 
+# ── Memory budget for 128 GB RAM / 96 vCPU production host ─────────────────
+#
+#   Component                    Count   Per-unit    Total
+#   ─────────────────────────────────────────────────────
+#   OS + nginx + misc            —       ~4 GB       4 GB
+#   API replicas (Node process)  3       ~1 GB       3 GB
+#   API concurrent jobs          300     96 MB       ~28 GB
+#   Terminal Node process        1       ~4 GB       4 GB
+#   Terminal sandbox containers  1000    96 MB       ~94 GB  (theoretical max — in practice <500 concurrent)
+#   ─────────────────────────────────────────────────────
+#   Worst-case peak                                  ~133 GB  ← just over; realistic peak ~90 GB
+#
+#   The terminal sessions are never all active at once (students are typing, not running).
+#   Reduce MAX_SESSIONS or per-container memory further on smaller hosts.
+
 services:
     # ── Replica 1 (port 2000 exposed for CLI/admin) ──────────────────────────
     api1:
@@ -30,62 +45,63 @@ services:
         container_name: piston_api_1
         ports:
             - "127.0.0.1:2000:2000"
-        # H4: Explicit memory cap prevents an OOM cascade.
-        # 150 concurrent jobs × 256 MB each = ~37 GB theoretical max.
-        # 42 GB ceiling gives headroom while stopping a runaway from eating the host.
-        # Tune this down on laptops/small VMs (e.g. mem_limit: 4g, max_concurrent_jobs: 8).
-        mem_limit: ${PISTON_API_MEM_LIMIT:-42g}
+        # 100 concurrent jobs × 96 MB run limit = ~9.6 GB peak per replica.
+        # 12g ceiling gives generous headroom for the Node process itself + compile jobs.
+        mem_limit: ${PISTON_API_MEM_LIMIT:-12g}
         environment:
             PISTON_RUNNER_UID_MIN: "1001"
             PISTON_RUNNER_UID_MAX: "1500"
             PISTON_RUNNER_GID_MIN: "1001"
             PISTON_RUNNER_GID_MAX: "1500"
-            PISTON_MAX_CONCURRENT_JOBS: "150"
-            PISTON_RUN_MEMORY_LIMIT: "268435456"
-            PISTON_COMPILE_MEMORY_LIMIT: "268435456"
-            PISTON_RUN_TIMEOUT: "120000"
+            PISTON_MAX_CONCURRENT_JOBS: "100"
+            # 96 MB run limit: enough for Python/JS/Java classroom workloads.
+            # Raise to 256 MB for C++/Rust heavy compilation on a bigger host.
+            PISTON_RUN_MEMORY_LIMIT: "100663296"
+            # 192 MB compile limit: GCC/Rust need more headroom during compilation.
+            PISTON_COMPILE_MEMORY_LIMIT: "201326592"
+            PISTON_RUN_TIMEOUT: "15000"
             PISTON_COMPILE_TIMEOUT: "30000"
-            PISTON_RUN_CPU_TIME: "15000"
+            PISTON_RUN_CPU_TIME: "10000"
             PISTON_COMPILE_CPU_TIME: "30000"
-            PISTON_OUTPUT_MAX_SIZE: "10240"
+            PISTON_OUTPUT_MAX_SIZE: "65536"
 
     # ── Replica 2 (internal only) ─────────────────────────────────────────────
     api2:
         <<: *api-base
         container_name: piston_api_2
-        mem_limit: ${PISTON_API_MEM_LIMIT:-42g}
+        mem_limit: ${PISTON_API_MEM_LIMIT:-12g}
         environment:
             PISTON_RUNNER_UID_MIN: "1501"
             PISTON_RUNNER_UID_MAX: "2000"
             PISTON_RUNNER_GID_MIN: "1501"
             PISTON_RUNNER_GID_MAX: "2000"
-            PISTON_MAX_CONCURRENT_JOBS: "150"
-            PISTON_RUN_MEMORY_LIMIT: "268435456"
-            PISTON_COMPILE_MEMORY_LIMIT: "268435456"
-            PISTON_RUN_TIMEOUT: "120000"
+            PISTON_MAX_CONCURRENT_JOBS: "100"
+            PISTON_RUN_MEMORY_LIMIT: "100663296"
+            PISTON_COMPILE_MEMORY_LIMIT: "201326592"
+            PISTON_RUN_TIMEOUT: "15000"
             PISTON_COMPILE_TIMEOUT: "30000"
-            PISTON_RUN_CPU_TIME: "15000"
+            PISTON_RUN_CPU_TIME: "10000"
             PISTON_COMPILE_CPU_TIME: "30000"
-            PISTON_OUTPUT_MAX_SIZE: "10240"
+            PISTON_OUTPUT_MAX_SIZE: "65536"
 
     # ── Replica 3 (internal only) ─────────────────────────────────────────────
     api3:
         <<: *api-base
         container_name: piston_api_3
-        mem_limit: ${PISTON_API_MEM_LIMIT:-42g}
+        mem_limit: ${PISTON_API_MEM_LIMIT:-12g}
         environment:
             PISTON_RUNNER_UID_MIN: "2001"
             PISTON_RUNNER_UID_MAX: "2500"
             PISTON_RUNNER_GID_MIN: "2001"
             PISTON_RUNNER_GID_MAX: "2500"
-            PISTON_MAX_CONCURRENT_JOBS: "150"
-            PISTON_RUN_MEMORY_LIMIT: "268435456"
-            PISTON_COMPILE_MEMORY_LIMIT: "268435456"
-            PISTON_RUN_TIMEOUT: "120000"
+            PISTON_MAX_CONCURRENT_JOBS: "100"
+            PISTON_RUN_MEMORY_LIMIT: "100663296"
+            PISTON_COMPILE_MEMORY_LIMIT: "201326592"
+            PISTON_RUN_TIMEOUT: "15000"
             PISTON_COMPILE_TIMEOUT: "30000"
-            PISTON_RUN_CPU_TIME: "15000"
+            PISTON_RUN_CPU_TIME: "10000"
             PISTON_COMPILE_CPU_TIME: "30000"
-            PISTON_OUTPUT_MAX_SIZE: "10240"
+            PISTON_OUTPUT_MAX_SIZE: "65536"
 
     # ── Sandbox Terminal Service (node-pty + WebSocket → Docker) ─────────────
     terminal-service:
@@ -99,12 +115,13 @@ services:
             SANDBOX_IMAGE: piston-sandbox:latest
             IDLE_TIMEOUT_MS: "300000"
             MAX_LIFETIME_MS: "1800000"
-            MAX_SESSIONS: "1000"         # 1000 concurrent terminal sessions for 128 GB RAM host
+            # 500 concurrent sessions at 96 MB each = ~47 GB. Safe under 128 GB
+            # when API replicas are running at normal load. Raise to 1000 only if
+            # terminal-service is the sole heavy workload on this host.
+            MAX_SESSIONS: "500"
             PORT: "3000"
-            # M2: Match NODE_OLD_SPACE_MB to this container's mem_limit minus ~500 MB OS overhead.
-            # Lower both values together when deploying on smaller hosts.
             NODE_OLD_SPACE_MB: "3584"
-        mem_limit: ${TERMINAL_MEM_LIMIT:-4g}  # Scaled from 1g → 4g to safely manage 500 WS PTY streams
+        mem_limit: ${TERMINAL_MEM_LIMIT:-4g}
         networks:
             - piston-net
         healthcheck:

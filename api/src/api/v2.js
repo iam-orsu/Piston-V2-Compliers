@@ -4,8 +4,8 @@ const router = express.Router();
 const events = require('events');
 
 const runtime = require('../runtime');
-const { Job } = require('../job');
-const package = require('../package');
+const { Job, QueueFullError, get_queue_stats } = require('../job');
+const Package = require('../package');
 const globals = require('../globals');
 const config = require('../config');
 const logger = require('logplease').create('api/v2');
@@ -17,6 +17,11 @@ try {
     rateLimit = require('express-rate-limit');
 } catch (_) {
     rateLimit = null;
+    logger.warn(
+        'express-rate-limit is not installed — ALL rate limiting is disabled. ' +
+        'The /execute and /packages endpoints are completely unprotected. ' +
+        'Fix: npm install express-rate-limit'
+    );
 }
 
 const make_limiter = (max, window_ms) => {
@@ -191,6 +196,13 @@ router.post('/execute', make_limiter(60, 60 * 1000), async (req, res) => {
 
         return res.status(200).send(result);
     } catch (error) {
+        if (error instanceof QueueFullError) {
+            // Tell the client to back off for 5 seconds before retrying.
+            // This prevents the 1000-student thundering herd from hammering
+            // the server when all slots are full.
+            res.set('Retry-After', '5');
+            return res.status(503).json({ message: error.message });
+        }
         logger.error(`Error executing job: ${job.uuid}:\n${error}`);
         return res.status(500).send({ message: 'Execution error' });
     } finally {
@@ -349,9 +361,32 @@ router.ws('/connect', async (ws, req) => {
                     break;
             }
         } catch (error) {
-            safe_ws_send(ws, JSON.stringify({ type: 'error', message: error.message }));
-            ws.close(4002, 'Notified Error');
+            if (error instanceof QueueFullError) {
+                // Use a distinct code so clients can differentiate capacity
+                // rejection from a real execution error and apply retry logic.
+                safe_ws_send(ws, JSON.stringify({
+                    type: 'error',
+                    code: 'queue_full',
+                    message: error.message,
+                }));
+                ws.close(4429, 'Server at Capacity');
+            } else {
+                safe_ws_send(ws, JSON.stringify({ type: 'error', message: error.message }));
+                ws.close(4002, 'Notified Error');
+            }
         }
+    });
+});
+
+// Health + live metrics — used by nginx wait-for-backends, Docker healthcheck,
+// and any external monitoring (Grafana, UptimeRobot, etc.).
+router.get('/health', (req, res) => {
+    const stats = get_queue_stats();
+    const status = stats.queued >= stats.queue_max ? 'degraded' : 'ok';
+    return res.status(status === 'ok' ? 200 : 503).json({
+        status,
+        runtimes: runtime.length,
+        ...stats,
     });
 });
 
@@ -371,7 +406,7 @@ router.get('/runtimes', (req, res) => {
 // Rate limit read-only package listing — returns locally installed packages
 router.get('/packages', make_limiter(30, 60 * 1000), async (req, res) => {
     logger.debug('Request to list packages');
-    let packages = await package.get_package_list();
+    let packages = await Package.get_package_list();
 
     packages = packages.map(pkg => {
         return {
@@ -396,7 +431,7 @@ router.post('/packages', make_limiter(5, 60 * 1000), async (req, res) => {
         return res.status(400).json({ message: 'version is required as a string' });
     }
 
-    const pkg = new package({ language, version });
+    const pkg = new Package({ language, version });
     if (pkg.version === null) {
         return res.status(400).json({ message: `Invalid semver version: ${version}` });
     }
