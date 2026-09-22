@@ -8,6 +8,7 @@ const fss = require('fs');
 const https = require('https');
 const http = require('http');
 const cp = require('child_process');
+const crypto = require('crypto');
 
 const REPO_URL = 'https://github.com/engineer-man/piston/releases/download/pkgs';
 
@@ -100,8 +101,8 @@ class Package {
         const index = index_text.trim().split('\n')
             .filter(l => l.trim())
             .map(line => {
-                const [language, version, , url] = line.split(',');
-                return { language, version, url };
+                const [language, version, sha256, url] = line.split(',');
+                return { language, version, sha256: (sha256 || '').trim(), url };
             });
 
         // Find matching entry — exact version match
@@ -119,6 +120,22 @@ class Package {
         const tmp_path = `/tmp/${tarball_name}`;
         logger.info(`Downloading ${tarball_name}...`);
         await download_file(entry.url, tmp_path);
+
+        // Verify SHA256 integrity before extracting — prevents supply-chain attacks
+        // where a compromised registry or MITM replaces the tarball.
+        if (entry.sha256 && entry.sha256.length === 64) {
+            const file_buf = await fs.readFile(tmp_path);
+            const actual = crypto.createHash('sha256').update(file_buf).digest('hex');
+            if (actual !== entry.sha256) {
+                await fs.unlink(tmp_path).catch(() => {});
+                throw new Error(
+                    `SHA256 mismatch for ${tarball_name}: expected ${entry.sha256}, got ${actual}`
+                );
+            }
+            logger.info(`SHA256 verified for ${tarball_name}`);
+        } else {
+            logger.warn(`No SHA256 in registry for ${tarball_name} — skipping integrity check`);
+        }
 
         // Create install directory and extract
         await fs.mkdir(this.install_path, { recursive: true });
