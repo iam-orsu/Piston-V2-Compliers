@@ -117,7 +117,6 @@ class Runtime {
     // so the env_vars getter never needs to shell out at request time.
     static _resolve_env_vars(package_dir) {
         const env_file = path.join(package_dir, '.env');
-        const env_script = path.join(package_dir, 'environment');
 
         try {
             const env_content = fss.read_file_sync(env_file).toString();

@@ -24,9 +24,9 @@ function fetch_text(url) {
                 if (res.statusCode !== 200) {
                     return reject(new Error(`HTTP ${res.statusCode} fetching ${u}`));
                 }
-                let data = '';
-                res.on('data', chunk => { data += chunk; });
-                res.on('end', () => resolve(data));
+                const chunks = [];
+                res.on('data', chunk => { chunks.push(chunk); });
+                res.on('end', () => resolve(Buffer.concat(chunks).toString()));
                 res.on('error', reject);
             }).on('error', reject);
         };

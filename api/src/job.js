@@ -97,6 +97,11 @@ class Job {
         this.state = job_states.READY;
         this.#dirty_boxes = [];
         this._cleanup_done = false;
+        // Tracks whether this job successfully claimed a semaphore slot.
+        // cleanup() must only release a slot that was actually claimed — if
+        // prime() threw QueueFullError before claiming, this stays false and
+        // cleanup() skips the slot-release, preventing counter inflation.
+        this._slot_claimed = false;
     }
 
     async #create_isolate_box() {
@@ -143,8 +148,10 @@ class Job {
                 job_queue.push(resolve);
             });
             // Slot was handed to us directly by cleanup() — do NOT decrement again.
+            this._slot_claimed = true;
         } else {
             remaining_job_spaces--;
+            this._slot_claimed = true;
         }
 
         this.logger.info(`Priming job`);
@@ -481,14 +488,20 @@ class Job {
 
         this.logger.info(`Cleaning up job`);
 
-        // C2: Pass the slot directly to the next waiter if one exists,
-        // otherwise increment the counter. This avoids the TOCTOU window
-        // where two primes both see remaining_job_spaces >= 1.
-        if (job_queue.length > 0) {
-            job_queue.shift()();
-            // remaining_job_spaces stays the same — handed off to the waiter
-        } else {
-            remaining_job_spaces++;
+        // C2: Only release a slot if this job actually claimed one.
+        // If prime() threw QueueFullError before claiming, _slot_claimed stays
+        // false and we skip the release — preventing counter inflation.
+        if (this._slot_claimed) {
+            this._slot_claimed = false;
+            // Pass the slot directly to the next waiter if one exists,
+            // otherwise increment the counter. Avoids TOCTOU where two primes
+            // both see remaining_job_spaces >= 1 and both proceed.
+            if (job_queue.length > 0) {
+                job_queue.shift()();
+                // remaining_job_spaces stays the same — handed off to the waiter
+            } else {
+                remaining_job_spaces++;
+            }
         }
 
         // Await isolate --cleanup with a 10 s timeout — a hung cleanup must not
