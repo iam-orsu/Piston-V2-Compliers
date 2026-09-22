@@ -17,6 +17,11 @@ try {
     rateLimit = require('express-rate-limit');
 } catch (_) {
     rateLimit = null;
+    logger.warn(
+        'express-rate-limit is not installed — ALL rate limiting is disabled. ' +
+        'The /execute and /packages endpoints are completely unprotected. ' +
+        'Fix: npm install express-rate-limit'
+    );
 }
 
 const make_limiter = (max, window_ms) => {
@@ -356,8 +361,19 @@ router.ws('/connect', async (ws, req) => {
                     break;
             }
         } catch (error) {
-            safe_ws_send(ws, JSON.stringify({ type: 'error', message: error.message }));
-            ws.close(4002, 'Notified Error');
+            if (error instanceof QueueFullError) {
+                // Use a distinct code so clients can differentiate capacity
+                // rejection from a real execution error and apply retry logic.
+                safe_ws_send(ws, JSON.stringify({
+                    type: 'error',
+                    code: 'queue_full',
+                    message: error.message,
+                }));
+                ws.close(4429, 'Server at Capacity');
+            } else {
+                safe_ws_send(ws, JSON.stringify({ type: 'error', message: error.message }));
+                ws.close(4002, 'Notified Error');
+            }
         }
     });
 });
