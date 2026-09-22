@@ -73,6 +73,8 @@ services:
       - PISTON_DISABLE_NETWORKING=true
       - PISTON_RUN_MEMORY_LIMIT=268435456    # 256 MB per job run stage
       - PISTON_COMPILE_MEMORY_LIMIT=536870912 # 512 MB per job compile stage
+      - PISTON_RUN_TIMEOUT=30000             # 30s — time for students to type input
+      - PISTON_COMPILE_TIMEOUT=30000         # 30s compile timeout
 
     depends_on:
       host-init:
@@ -116,6 +118,8 @@ services:
       - PISTON_DISABLE_NETWORKING=true
       - PISTON_RUN_MEMORY_LIMIT=268435456
       - PISTON_COMPILE_MEMORY_LIMIT=536870912
+      - PISTON_RUN_TIMEOUT=30000
+      - PISTON_COMPILE_TIMEOUT=30000
     depends_on:
       host-init:
         condition: service_completed_successfully
@@ -157,6 +161,8 @@ services:
       - PISTON_DISABLE_NETWORKING=true
       - PISTON_RUN_MEMORY_LIMIT=268435456
       - PISTON_COMPILE_MEMORY_LIMIT=536870912
+      - PISTON_RUN_TIMEOUT=30000
+      - PISTON_COMPILE_TIMEOUT=30000
     depends_on:
       host-init:
         condition: service_completed_successfully
