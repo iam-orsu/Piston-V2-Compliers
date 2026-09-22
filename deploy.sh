@@ -241,7 +241,7 @@ auto_install_runtimes() {
     echo -e "${CYAN}${BOLD}🚀  Checking default runtimes...${NC}"
 
     local runtimes_json
-    runtimes_json=$(curl -sf http://localhost:2000/api/v2/runtimes 2>/dev/null || echo "[]")
+    runtimes_json=$(curl -sf http://localhost/api/v2/runtimes 2>/dev/null || echo "[]")
 
     local missing_langs=()
     local missing_vers=()
@@ -390,7 +390,9 @@ cmd_restart() {
     mkdir -p ./data/piston/packages
     log "Rebuilding and restarting (applying changes)..."
     $DC up -d --build --remove-orphans
-    wait_for_api
+    if wait_for_api; then
+        auto_install_runtimes
+    fi
     print_ready_banner
 }
 
