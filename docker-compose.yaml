@@ -176,29 +176,6 @@ services:
     networks:
       - piston_net
 
-  # ── Sandbox terminal service (Shell tab — node-pty + Docker) ─────────────────
-  terminal-service:
-    build: terminal-service
-    container_name: piston_terminal
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - SANDBOX_IMAGE=piston-sandbox:latest
-      - IDLE_TIMEOUT_MS=300000
-      - MAX_LIFETIME_MS=1800000
-      - MAX_SESSIONS=500
-      - PORT=3000
-    mem_limit: ${TERMINAL_MEM_LIMIT:-4g}
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    networks:
-      - piston_net
-
   # ── nginx load balancer + frontend ──────────────────────────────────────────
   nginx:
     build: nginx
@@ -218,8 +195,6 @@ services:
       api2:
         condition: service_healthy
       api3:
-        condition: service_healthy
-      terminal-service:
         condition: service_healthy
     networks:
       - piston_net
