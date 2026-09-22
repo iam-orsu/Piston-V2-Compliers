@@ -311,8 +311,6 @@ cmd_start() {
 
     build_sandbox_image
 
-    mkdir -p ./data/piston/packages
-
     log "Building and starting containers..."
     $DC up -d --build --remove-orphans
 
@@ -387,7 +385,6 @@ cmd_stop() {
 cmd_restart() {
     check_docker
     build_sandbox_image
-    mkdir -p ./data/piston/packages
     log "Rebuilding and restarting (applying changes)..."
     $DC up -d --build --remove-orphans
     if wait_for_api; then

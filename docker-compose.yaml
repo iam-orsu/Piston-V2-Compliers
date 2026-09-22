@@ -195,15 +195,11 @@ services:
 
 # ── Volumes ──────────────────────────────────────────────────────────────────
 volumes:
+  # Plain Docker named volume — Docker manages it on the Linux ext4 filesystem.
+  # DO NOT use a bind-mount to the Windows/NTFS filesystem (e.g. /mnt/c/...) —
+  # NTFS does not support utime/chmod, which causes tar to fail when extracting
+  # language runtime packages. Named volumes work on both WSL2 and bare Linux.
   packages:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      # All 3 replicas share one packages directory so an install on any replica
-      # is immediately visible to the others. Create this directory before first run:
-      #   mkdir -p ./data/piston/packages
-      device: ./data/piston/packages
 
 # ── Networks ─────────────────────────────────────────────────────────────────
 networks:
