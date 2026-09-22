@@ -304,12 +304,14 @@ class Job {
             for (const line of metadata_lines) {
                 if (!line) continue;
 
-                const [key, value] = line.split(':');
-                if (key === undefined || value === undefined) {
+                const colon_idx = line.indexOf(':');
+                if (colon_idx === -1) {
                     throw new Error(
                         `Failed to parse metadata file, received: ${line}`
                     );
                 }
+                const key = line.slice(0, colon_idx);
+                const value = line.slice(colon_idx + 1);
                 switch (key) {
                     case 'cg-mem':
                         memory = parse_int(value) * 1000;
