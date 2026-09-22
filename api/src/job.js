@@ -412,7 +412,9 @@ class Job {
             );
             emit_event_bus_result('compile', compile);
             // M6: also treat signal kill (code===null) as a compile error
-            compile_errored = compile.code !== 0 || compile.code === null;
+            // Treat non-zero exit OR signal kill (code === null) as compile error.
+            // null !== 0 is true, so a single check covers both cases.
+            compile_errored = compile.code !== 0;
             if (!compile_errored) {
                 const old_box_dir = box.dir;
                 box = await this.#create_isolate_box();
