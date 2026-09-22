@@ -216,9 +216,15 @@ if vers:
 
     echo -e "   ${YELLOW}⬇  Installing ${BOLD}${lang}=${ver}${NC}${YELLOW}...${NC}"
     local response
+    # Use printf %s to safely encode lang/ver — prevents JSON injection if either
+    # value contains quotes, braces, or other special characters.
+    local json_body
+    json_body=$(printf '{"language":"%s","version":"%s"}' \
+        "$(printf '%s' "$lang" | sed 's/["\\]/\\&/g')" \
+        "$(printf '%s' "$ver"  | sed 's/["\\]/\\&/g')")
     response=$(curl -sf -X POST http://localhost:2000/api/v2/packages \
         -H 'Content-Type: application/json' \
-        -d "{\"language\":\"${lang}\",\"version\":\"${ver}\"}" 2>&1)
+        -d "$json_body" 2>&1)
     local exit_code=$?
     if [[ $exit_code -ne 0 || "$response" == *'"message"'* ]]; then
         warn "Failed to install $lang — run './deploy.sh logs api1' for details"
