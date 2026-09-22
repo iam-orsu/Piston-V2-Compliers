@@ -467,7 +467,7 @@ const DEFAULT_CODE = {
     'csharp.net': `using System;\n\nclass Program {\n    static void Main() {\n        Console.Write("Enter your name: ");\n        string name = Console.ReadLine();\n        Console.WriteLine($"Hello, {name}!");\n    }\n}`,
     go: `package main\n\nimport (\n    "bufio"\n    "fmt"\n    "os"\n)\n\nfunc main() {\n    reader := bufio.NewReader(os.Stdin)\n    fmt.Print("Enter your name: ")\n    name, _ := reader.ReadString('\\n')\n    fmt.Printf("Hello, %s!", name)\n}`,
     rust: `use std::io::{self, Write};\n\nfn main() {\n    print!("Enter your name: ");\n    io::stdout().flush().unwrap();\n    let mut name = String::new();\n    io::stdin().read_line(&mut name).unwrap();\n    println!("Hello, {}!", name.trim());\n}`,
-    ruby: `print "Enter your name: "\nname = gets.chomp\nputs "Hello, #{name}!"`,
+    ruby: `$stdout.sync = true\nprint "Enter your name: "\nname = gets.chomp\nputs "Hello, #{name}!"`,
     php: `<?php\necho "Enter your name: ";\n$name = trim(fgets(STDIN));\necho "Hello, $name!\\n";`,
     kotlin: `fun main() {\n    print("Enter your name: ")\n    val name = readLine()\n    println("Hello, $name!")\n}`,
     swift: `import Foundation\nprint("Enter your name: ", terminator: "")\nif let name = readLine() {\n    print("Hello, \\(name)!")\n}`,
