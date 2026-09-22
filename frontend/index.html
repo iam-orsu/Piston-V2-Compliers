@@ -396,7 +396,7 @@
         <div class="terminal-titlebar">
             <button class="term-tab active" id="tab-terminal-btn">Terminal</button>
             <button class="term-tab" id="tab-stats-btn">Stats</button>
-            <button class="term-tab" id="tab-shell-btn" style="display:none">Shell <span class="shell-badge">sandbox</span></button>
+            <button class="term-tab" id="tab-shell-btn">Shell <span class="shell-badge">sandbox</span></button>
             <div class="tab-spacer"></div>
             <button class="clear-btn" id="clear-btn" title="Clear terminal">Clear</button>
         </div>
@@ -934,8 +934,8 @@ document.getElementById('tab-shell-btn').addEventListener('click', () => showTab
 
 // ── Sandbox Shell (ws /terminal) ───────────────────────────────────────────
 
-// Shell tab disabled — terminal-service not deployed in this setup
-const SHELL_LANGS = new Set();
+// Languages that get the Shell tab — interpreted + C/Java (no Rust, Go, C++, etc.)
+const SHELL_LANGS = new Set(['python', 'python2', 'node', 'javascript', 'typescript', 'c', 'java']);
 
 function shellFilename() {
     const lang = document.getElementById('lang-select').value;
