@@ -192,7 +192,7 @@ class Package {
     }
 
     // Enumerate all packages from the local packages directory.
-    // Reads pkg-info.json from every language/version subdirectory.
+    // Reads pkg-info.json from every language/version subdirectory in parallel.
     static async get_package_list() {
         const pkgdir = path.join(
             config.data_directory,
@@ -206,36 +206,34 @@ class Package {
             return [];
         }
 
-        const packages = [];
-
-        for (const lang of lang_dirs) {
-            let version_dirs;
-            try {
-                version_dirs = await fs.readdir(path.join(pkgdir, lang));
-            } catch (_) {
-                continue;
-            }
-
-            for (const ver of version_dirs) {
-                const pkg_dir = path.join(pkgdir, lang, ver);
-                const info_path = path.join(pkg_dir, 'pkg-info.json');
+        // Read all language dirs in parallel, then all version dirs in parallel
+        const per_lang = await Promise.all(
+            lang_dirs.map(async lang => {
+                let version_dirs;
                 try {
-                    const info = JSON.parse(
-                        await fs.readFile(info_path, 'utf8')
-                    );
-                    packages.push(
-                        new Package({
-                            language: info.language,
-                            version: info.version,
-                        })
-                    );
+                    version_dirs = await fs.readdir(path.join(pkgdir, lang));
                 } catch (_) {
-                    // skip directories without a valid pkg-info.json
+                    return [];
                 }
-            }
-        }
 
-        return packages;
+                return Promise.all(
+                    version_dirs.map(async ver => {
+                        const info_path = path.join(pkgdir, lang, ver, 'pkg-info.json');
+                        try {
+                            const info = JSON.parse(await fs.readFile(info_path, 'utf8'));
+                            return new Package({
+                                language: info.language,
+                                version: info.version,
+                            });
+                        } catch (_) {
+                            return null; // skip dirs without a valid pkg-info.json
+                        }
+                    })
+                );
+            })
+        );
+
+        return per_lang.flat().filter(Boolean);
     }
 
     // Fetch all available packages from the remote registry.
