@@ -325,6 +325,313 @@
             .terminal-panel { flex: 1; }
             .logo span { display: none; }
         }
+
+        /* ── Mode Toggle (IDE ↔ SQL Studio) ─────────────────────────────────── */
+        .mode-toggle {
+            display: flex;
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 2px;
+            gap: 2px;
+            flex-shrink: 0;
+        }
+        .mode-btn {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .mode-btn:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+        .mode-btn.active { background: var(--accent); color: #fff; }
+
+        /* ── SQL Studio outer container ─────────────────────────────────────── */
+        .sql-studio {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: row;
+        }
+
+        /* ── Schema Panel ────────────────────────────────────────────────────── */
+        .sql-schema-panel {
+            width: 220px;
+            min-width: 160px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-1);
+            border-right: 1px solid var(--border);
+        }
+        .sql-schema-header {
+            height: 36px;
+            padding: 0 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            flex-shrink: 0;
+        }
+        .sql-schema-reset {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 12px;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 3px;
+            display: none;
+        }
+        .sql-schema-reset:hover { color: var(--red); background: rgba(248,81,73,0.1); }
+        .sql-schema-body {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 6px;
+        }
+        .sql-schema-empty {
+            padding: 28px 12px;
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 12px;
+            line-height: 1.9;
+        }
+        .sql-schema-empty-icon { font-size: 26px; display: block; margin-bottom: 8px; }
+        .sql-table-item { margin-bottom: 4px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); }
+        .sql-table-row {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 8px;
+            cursor: pointer;
+            background: var(--bg-2);
+            user-select: none;
+        }
+        .sql-table-row:hover { background: #2d333b; }
+        .sql-table-chevron { font-size: 8px; color: var(--text-muted); width: 10px; flex-shrink: 0; }
+        .sql-table-icon { color: var(--accent); font-size: 11px; flex-shrink: 0; }
+        .sql-table-name { color: var(--text); font-family: var(--mono); font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .sql-table-count { font-size: 9px; color: var(--text-muted); background: var(--bg-0); padding: 1px 5px; border-radius: 10px; white-space: nowrap; flex-shrink: 0; }
+        .sql-select-all-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 15px;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0 2px;
+            flex-shrink: 0;
+        }
+        .sql-select-all-btn:hover { color: var(--accent); }
+        .sql-cols-list { background: var(--bg-0); border-top: 1px solid var(--border); }
+        .sql-col-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 10px 4px 26px;
+            font-size: 11px;
+            border-bottom: 1px solid var(--border);
+        }
+        .sql-col-row:last-child { border-bottom: none; }
+        .sql-col-name { color: var(--text-dim); font-family: var(--mono); }
+        .sql-col-type { color: var(--text-muted); font-size: 10px; text-transform: uppercase; font-family: var(--mono); }
+
+        /* ── SQL Content Area ────────────────────────────────────────────────── */
+        #sql-content-area {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        #sql-editor-section {
+            flex: 55;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        #sql-editor { flex: 1; min-height: 0; }
+
+        /* ── Drag Handle ─────────────────────────────────────────────────────── */
+        .sql-drag-handle {
+            height: 5px;
+            background: var(--border);
+            cursor: row-resize;
+            flex-shrink: 0;
+            transition: background 0.15s;
+        }
+        .sql-drag-handle:hover, .sql-drag-handle.dragging { background: var(--accent); }
+
+        /* ── Results Section ─────────────────────────────────────────────────── */
+        #sql-results-section {
+            flex: 45;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-0);
+        }
+        .sql-results-bar {
+            height: 36px;
+            background: var(--bg-1);
+            border-bottom: 1px solid var(--border);
+            border-top: none;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+        .sql-res-tab {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .sql-res-tab:hover { background: var(--bg-2); color: var(--text); }
+        .sql-res-tab.active { background: var(--bg-2); color: var(--text); }
+        .sql-res-info { margin-left: auto; font-size: 11px; color: var(--text-muted); font-family: var(--mono); }
+        .sql-results-body {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+        }
+        .sql-empty-msg { display: block; padding: 20px 16px; color: var(--text-muted); font-size: 13px; }
+        .sql-error-box { padding: 14px 16px; color: var(--red); font-size: 13px; font-family: var(--mono); white-space: pre-wrap; }
+        .sql-warning-box { padding: 6px 16px; color: var(--yellow); font-size: 12px; border-top: 1px solid var(--border); }
+        .sql-null-cell { color: var(--text-muted); font-style: italic; }
+        .sql-raw-pre { padding: 14px 16px; font-family: var(--mono); font-size: 12px; color: var(--text); white-space: pre; overflow-x: auto; margin: 0; }
+        .sql-result-block { overflow-x: auto; }
+        .sql-result-block + .sql-result-block { border-top: 2px solid var(--border); }
+        .sql-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .sql-tbl th {
+            background: var(--bg-1);
+            color: var(--text-dim);
+            font-weight: 600;
+            font-family: var(--mono);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            padding: 7px 12px;
+            border-bottom: 2px solid var(--border);
+            border-right: 1px solid var(--border);
+            text-align: left;
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        .sql-tbl th:last-child { border-right: none; }
+        .sql-tbl td {
+            padding: 5px 12px;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            font-family: var(--mono);
+            color: var(--text);
+            white-space: nowrap;
+            max-width: 320px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .sql-tbl td:last-child { border-right: none; }
+        .sql-tbl tbody tr:hover { background: rgba(88,166,255,0.04); }
+        .sql-tbl tbody tr:last-child td { border-bottom: none; }
+
+        /* ── Upload Modal ────────────────────────────────────────────────────── */
+        .sql-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.72);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
+        }
+        .sql-modal {
+            background: var(--bg-1);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            width: 440px;
+            max-width: 92vw;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .sql-modal-hdr {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border);
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .sql-modal-x {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 20px;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0 2px;
+        }
+        .sql-modal-x:hover { color: var(--text); }
+        .sql-modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+        .sql-modal-body p { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+        .sql-modal-body code { font-family: var(--mono); color: var(--accent); }
+        .sql-drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: var(--radius);
+            padding: 22px 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+            position: relative;
+        }
+        .sql-drop-zone:hover, .sql-drop-zone.drag-over { border-color: var(--accent); background: rgba(88,166,255,0.05); }
+        .sql-drop-zone input[type=file] {
+            position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+        }
+        .sql-drop-label { font-size: 13px; color: var(--text-dim); pointer-events: none; display: block; }
+        .sql-drop-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; pointer-events: none; display: block; }
+        .sql-chosen-file { font-size: 12px; color: var(--accent); font-family: var(--mono); margin-top: 6px; display: block; pointer-events: none; }
+        .sql-field-label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 5px; }
+        .sql-modal-input {
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 7px 10px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-family: var(--mono);
+            outline: none;
+            width: 100%;
+            transition: border-color 0.15s;
+        }
+        .sql-modal-input:focus { border-color: var(--accent); }
+        .sql-modal-err { color: var(--red); font-size: 12px; min-height: 18px; }
+        .sql-modal-ftr {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 18px;
+            border-top: 1px solid var(--border);
+            justify-content: flex-end;
+        }
     </style>
 </head>
 <body>
@@ -336,7 +643,14 @@
         <span>Piston IDE</span>
     </div>
     <div class="sep"></div>
-    <div class="controls">
+    <!-- Mode toggle: IDE ↔ SQL Studio -->
+    <div class="mode-toggle">
+        <button class="mode-btn active" id="btn-mode-ide" title="Multi-language code IDE">IDE</button>
+        <button class="mode-btn" id="btn-mode-sql" title="SQL Studio — persistent SQLite sessions">SQL</button>
+    </div>
+    <div class="sep"></div>
+    <!-- IDE controls (shown when in IDE mode) -->
+    <div class="controls" id="ide-controls">
         <select id="lang-select"><option>Loading runtimes...</option></select>
         <span class="version-badge" id="version-badge">—</span>
         <div class="spacer"></div>
@@ -354,10 +668,35 @@
             Run
         </button>
     </div>
+    <!-- SQL Studio controls (shown when in SQL mode) -->
+    <div class="controls" id="sql-controls" style="display:none">
+        <button class="run-btn" id="sql-run-btn">
+            <svg class="run-icon" width="13" height="13" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z"/>
+            </svg>
+            <div class="spinner"></div>
+            Run SQL
+        </button>
+        <button class="kill-btn" id="sql-kill-btn">
+            <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+            Stop
+        </button>
+        <button class="icon-btn" id="sql-upload-open-btn">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            Upload File
+        </button>
+        <button class="icon-btn" id="sql-clear-btn">Clear</button>
+        <div class="spacer"></div>
+        <span class="version-badge" style="color:var(--accent)">SQLite3</span>
+    </div>
 </header>
 
-<!-- Main Split -->
-<div class="main">
+<!-- Main Split (IDE mode) -->
+<div class="main" id="ide-main">
 
     <!-- Editor Panel -->
     <div class="editor-panel">
@@ -386,6 +725,85 @@
         </div>
     </div>
 
+</div>
+
+<!-- SQL Studio (hidden until SQL mode is active) -->
+<div class="sql-studio" id="sql-studio" style="display:none">
+
+    <!-- Left: Schema Explorer -->
+    <div class="sql-schema-panel">
+        <div class="sql-schema-header">
+            <span>Schema</span>
+            <button class="sql-schema-reset" id="sql-schema-reset" title="Clear dataset and reset session">↺ Reset</button>
+        </div>
+        <div class="sql-schema-body" id="sql-schema-body">
+            <div class="sql-schema-empty">
+                <span class="sql-schema-empty-icon">🗄️</span>
+                No dataset loaded.<br>
+                <span style="color:var(--accent)">Upload a .csv or .sql</span><br>
+                file to start querying.
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Editor + Results -->
+    <div id="sql-content-area">
+
+        <!-- Monaco SQL editor -->
+        <div id="sql-editor-section">
+            <div id="sql-editor"></div>
+        </div>
+
+        <!-- Drag-to-resize handle -->
+        <div class="sql-drag-handle" id="sql-drag-handle"></div>
+
+        <!-- Results panel -->
+        <div id="sql-results-section">
+            <div class="sql-results-bar">
+                <button class="sql-res-tab active" id="sql-tab-table" onclick="setSqlTab('table')">Table</button>
+                <button class="sql-res-tab" id="sql-tab-raw" onclick="setSqlTab('raw')">Raw</button>
+                <span class="sql-res-info" id="sql-res-info"></span>
+            </div>
+            <div class="sql-results-body" id="sql-results-body">
+                <span class="sql-empty-msg">Run a query to see results.</span>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Upload Modal -->
+<div class="sql-modal-overlay" id="sql-modal-overlay" style="display:none">
+    <div class="sql-modal">
+        <div class="sql-modal-hdr">
+            <span>Upload Dataset</span>
+            <button class="sql-modal-x" id="sql-modal-x">×</button>
+        </div>
+        <div class="sql-modal-body">
+            <p>Upload a <code>.csv</code> or <code>.sql</code> file to use as your SQLite dataset. Each student gets their own isolated session.</p>
+            <div class="sql-drop-zone" id="sql-drop-zone">
+                <input type="file" id="sql-file-input" accept=".csv,.sql">
+                <span class="sql-drop-label">Choose file or drag &amp; drop here</span>
+                <span class="sql-drop-sub">Accepts .csv and .sql · Max 8 MB</span>
+                <span class="sql-chosen-file" id="sql-chosen-file"></span>
+            </div>
+            <div>
+                <label class="sql-field-label" for="sql-table-name">Table name <span style="color:var(--text-muted)">(CSV only — leave blank to use filename)</span></label>
+                <input class="sql-modal-input" type="text" id="sql-table-name" placeholder="e.g. employees" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="sql-modal-err" id="sql-modal-err"></div>
+        </div>
+        <div class="sql-modal-ftr">
+            <button class="run-btn" id="sql-upload-confirm-btn">
+                <svg class="run-icon" width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                </svg>
+                <div class="spinner"></div>
+                Upload
+            </button>
+            <button class="icon-btn" id="sql-upload-cancel-btn">Cancel</button>
+        </div>
+    </div>
 </div>
 
 <!-- Status Bar -->
@@ -614,6 +1032,8 @@ require(['vs/editor/editor.main'], () => {
 
     initTerminal();
     loadRuntimes();
+    initSqlEditor();
+    initSqlResize();
 });
 
 // ── Runtimes ───────────────────────────────────────────────────────────────
@@ -625,7 +1045,8 @@ async function loadRuntimes() {
         runtimes = await res.json();
 
         // Filter out .net runtimes (dotnet 5.x incompatible with OpenSSL 3 on this server)
-        const BLOCKED = new Set(['csharp.net', 'fsharp.net', 'basic.net', 'fsi', 'scala']);
+        // sqlite3 excluded — students use the SQL Studio tab which adds persistence
+        const BLOCKED = new Set(['csharp.net', 'fsharp.net', 'basic.net', 'fsi', 'scala', 'sqlite3']);
         runtimesByLang = {};
         runtimes.forEach(rt => {
             if (BLOCKED.has(rt.language)) return;
@@ -898,6 +1319,416 @@ document.getElementById('clear-btn').addEventListener('click', () => { termClear
 
 document.getElementById('tab-terminal-btn').addEventListener('click', () => showTab('terminal'));
 document.getElementById('tab-stats-btn').addEventListener('click', () => showTab('stats'));
+
+// ── SQL Studio ─────────────────────────────────────────────────────────────
+
+let sqlEditor     = null;
+let sqlRunning    = false;
+let sqlAbortCtrl  = null;
+let sqlSchema     = [];
+let sqlSets       = [];   // parsed result sets [{columns, rows}]
+let sqlRaw        = '';   // text/raw output
+let sqlActiveTab  = 'table';
+
+function getSqlSession() {
+    try {
+        let id = localStorage.getItem('pistonsql_session');
+        const ok = /^[A-Za-z0-9_-]{8,64}$/.test(id || '');
+        if (!ok) {
+            const arr = new Uint8Array(16);
+            crypto.getRandomValues(arr);
+            id = Array.from(arr, b => b.toString(16).padStart(2,'0')).join('');
+            localStorage.setItem('pistonsql_session', id);
+        }
+        return id;
+    } catch(_) {
+        return Math.random().toString(36).slice(2) + Date.now().toString(36);
+    }
+}
+
+function initSqlEditor() {
+    sqlEditor = monaco.editor.create(document.getElementById('sql-editor'), {
+        value: '-- Welcome to SQL Studio\n-- Upload a .csv or .sql file, then query it here\n-- Tip: Ctrl+Enter to run\n\nSELECT * FROM employees LIMIT 10;',
+        language: 'sql',
+        theme: 'vs-dark',
+        fontSize: 14,
+        fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace",
+        fontLigatures: true,
+        minimap: { enabled: false },
+        automaticLayout: true,
+        lineNumbers: 'on',
+        scrollBeyondLastLine: false,
+        renderLineHighlight: 'line',
+        tabSize: 2,
+        wordWrap: 'on',
+        padding: { top: 12, bottom: 12 },
+        smoothScrolling: true,
+    });
+    sqlEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, sqlRunQuery);
+}
+
+function initSqlResize() {
+    const handle = document.getElementById('sql-drag-handle');
+    const edSec  = document.getElementById('sql-editor-section');
+    const resSec = document.getElementById('sql-results-section');
+    const area   = document.getElementById('sql-content-area');
+    let dragging = false;
+
+    handle.addEventListener('mousedown', (e) => {
+        dragging = true;
+        handle.classList.add('dragging');
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'row-resize';
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const rect = area.getBoundingClientRect();
+        const pct  = Math.max(15, Math.min(85, ((e.clientY - rect.top) / rect.height) * 100));
+        edSec.style.flex  = `0 0 ${pct}%`;
+        resSec.style.flex = `0 0 ${100 - pct}%`;
+        try { sqlEditor && sqlEditor.layout(); } catch(_) {}
+    });
+    document.addEventListener('mouseup', () => {
+        if (dragging) {
+            dragging = false;
+            handle.classList.remove('dragging');
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+        }
+    });
+}
+
+// ── Mode switch ────────────────────────────────────────────────────────────
+
+function switchMode(mode) {
+    const ideMain    = document.getElementById('ide-main');
+    const sqlStudio  = document.getElementById('sql-studio');
+    const ideCtrl    = document.getElementById('ide-controls');
+    const sqlCtrl    = document.getElementById('sql-controls');
+    const btnIde     = document.getElementById('btn-mode-ide');
+    const btnSql     = document.getElementById('btn-mode-sql');
+
+    if (mode === 'sql') {
+        ideMain.style.display   = 'none';
+        sqlStudio.style.display = 'flex';
+        ideCtrl.style.display   = 'none';
+        sqlCtrl.style.display   = 'flex';
+        btnIde.classList.remove('active');
+        btnSql.classList.add('active');
+        setStatus('SQL Studio', 'Ready — Ctrl+Enter to run', 'default');
+        setTimeout(() => { try { sqlEditor && sqlEditor.layout(); } catch(_) {} }, 60);
+    } else {
+        ideMain.style.display   = 'flex';
+        sqlStudio.style.display = 'none';
+        ideCtrl.style.display   = 'flex';
+        sqlCtrl.style.display   = 'none';
+        btnIde.classList.add('active');
+        btnSql.classList.remove('active');
+        const sel  = document.getElementById('lang-select');
+        const lang = sel ? sel.value : 'Piston IDE';
+        setStatus(lang || 'Piston IDE', 'Ready — Ctrl+Enter to run', 'default');
+        setTimeout(() => { try { fitAddon && fitAddon.fit(); } catch(_) {} }, 60);
+    }
+}
+
+// ── Run query ──────────────────────────────────────────────────────────────
+
+async function sqlRunQuery() {
+    if (sqlRunning || !sqlEditor) return;
+    const query = sqlEditor.getValue().trim();
+    if (!query) return;
+
+    sqlRunning = true;
+    sqlAbortCtrl = new AbortController();
+    document.getElementById('sql-run-btn').disabled = true;
+    document.getElementById('sql-run-btn').classList.add('loading');
+    document.getElementById('sql-kill-btn').classList.add('visible');
+    setStatus('SQL Studio', 'Running...', 'running');
+    document.getElementById('sql-results-body').innerHTML = '<span class="sql-empty-msg">Running…</span>';
+    document.getElementById('sql-res-info').textContent = '';
+
+    try {
+        const res  = await fetch('/sql-api/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: getSqlSession(), query }),
+            signal: sqlAbortCtrl.signal,
+        });
+        const data = await res.json();
+
+        if (data.schema && data.schema.length > 0) {
+            sqlSchema = data.schema;
+            renderSqlSchema(sqlSchema);
+        }
+
+        if (data.error) {
+            showSqlError(data.error, data.warning || '');
+            setStatus('SQL Studio', 'Query error', 'error');
+        } else {
+            sqlSets = (data.parsed && data.parsed.sets) || [];
+            sqlRaw  = (data.parsed && data.parsed.raw) || data.output || '';
+            renderSqlResults();
+            const n = sqlSets.reduce((s, r) => s + r.rows.length, 0);
+            setStatus('SQL Studio', `Done — ${n} row${n !== 1 ? 's' : ''} returned`, 'success');
+            if (data.warning) {
+                const body = document.getElementById('sql-results-body');
+                body.insertAdjacentHTML('beforeend', `<div class="sql-warning-box">${escHtml(data.warning)}</div>`);
+            }
+        }
+    } catch (e) {
+        if (e.name === 'AbortError') {
+            setStatus('SQL Studio', 'Stopped', 'killed');
+            document.getElementById('sql-results-body').innerHTML = '<span class="sql-empty-msg">Query stopped.</span>';
+        } else {
+            showSqlError('Could not reach SQL backend: ' + e.message, '');
+            setStatus('SQL Studio', 'Backend error', 'error');
+        }
+    } finally {
+        sqlRunning = false;
+        sqlAbortCtrl = null;
+        document.getElementById('sql-run-btn').disabled = false;
+        document.getElementById('sql-run-btn').classList.remove('loading');
+        document.getElementById('sql-kill-btn').classList.remove('visible');
+    }
+}
+
+// ── Schema panel ───────────────────────────────────────────────────────────
+
+function renderSqlSchema(tables) {
+    const body   = document.getElementById('sql-schema-body');
+    const resetB = document.getElementById('sql-schema-reset');
+
+    if (!tables || tables.length === 0) {
+        body.innerHTML = `<div class="sql-schema-empty">
+            <span class="sql-schema-empty-icon">🗄️</span>
+            No dataset loaded.<br>
+            <span style="color:var(--accent)">Upload a .csv or .sql</span><br>
+            file to start querying.
+        </div>`;
+        resetB.style.display = 'none';
+        return;
+    }
+
+    resetB.style.display = 'inline-flex';
+    body.innerHTML = tables.map(t => {
+        const safeId = t.name.replace(/[^A-Za-z0-9_]/g, '_');
+        return `<div class="sql-table-item">
+            <div class="sql-table-row" onclick="toggleSqlTable('${safeId}')">
+                <span class="sql-table-chevron" id="chev-${safeId}">▶</span>
+                <span class="sql-table-icon">⊞</span>
+                <span class="sql-table-name" title="${escHtml(t.name)}">${escHtml(t.name)}</span>
+                <span class="sql-table-count">${t.columns.length} col${t.columns.length !== 1 ? 's' : ''}</span>
+                <button class="sql-select-all-btn" title="SELECT * FROM ${escHtml(t.name)}"
+                    onclick="event.stopPropagation(); sqlInjectQuery(${JSON.stringify(t.name)})">+</button>
+            </div>
+            <div class="sql-cols-list" id="cols-${safeId}" style="display:none">
+                ${t.columns.map(c => `<div class="sql-col-row">
+                    <span class="sql-col-name">${escHtml(c.name)}</span>
+                    <span class="sql-col-type">${escHtml(c.type)}</span>
+                </div>`).join('')}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function toggleSqlTable(safeId) {
+    const el  = document.getElementById('cols-' + safeId);
+    const chev = document.getElementById('chev-' + safeId);
+    if (!el) return;
+    const open = el.style.display !== 'none';
+    el.style.display   = open ? 'none' : 'block';
+    chev.textContent   = open ? '▶' : '▼';
+}
+
+function sqlInjectQuery(tableName) {
+    if (sqlEditor) {
+        sqlEditor.setValue(`SELECT * FROM "${tableName}" LIMIT 100;`);
+        sqlEditor.focus();
+    }
+}
+
+// ── Results ────────────────────────────────────────────────────────────────
+
+function setSqlTab(tab) {
+    sqlActiveTab = tab;
+    document.getElementById('sql-tab-table').classList.toggle('active', tab === 'table');
+    document.getElementById('sql-tab-raw').classList.toggle('active', tab === 'raw');
+    renderSqlResults();
+}
+
+function renderSqlResults() {
+    if (sqlActiveTab === 'raw') { renderSqlRaw(); return; }
+
+    const body = document.getElementById('sql-results-body');
+    if (!sqlSets || sqlSets.length === 0) {
+        body.innerHTML = '<span class="sql-empty-msg">Query executed — no rows returned.</span>';
+        document.getElementById('sql-res-info').textContent = '';
+        return;
+    }
+
+    const html = sqlSets.map(set => {
+        const ths = set.columns.map(c => `<th>${escHtml(c)}</th>`).join('');
+        const trs = set.rows.map(row =>
+            `<tr>${row.map(cell =>
+                cell === null
+                    ? `<td><span class="sql-null-cell">NULL</span></td>`
+                    : `<td>${escHtml(String(cell))}</td>`
+            ).join('')}</tr>`
+        ).join('');
+        return `<div class="sql-result-block"><table class="sql-tbl"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table></div>`;
+    }).join('');
+
+    body.innerHTML = html;
+    const totalRows = sqlSets.reduce((n, s) => n + s.rows.length, 0);
+    const info = `${totalRows} row${totalRows !== 1 ? 's' : ''}${sqlSets.length > 1 ? `, ${sqlSets.length} result sets` : ''}`;
+    document.getElementById('sql-res-info').textContent = info;
+}
+
+function renderSqlRaw() {
+    const body = document.getElementById('sql-results-body');
+    body.innerHTML = `<pre class="sql-raw-pre">${escHtml(sqlRaw || '(no output)')}</pre>`;
+    document.getElementById('sql-res-info').textContent = '';
+}
+
+function showSqlError(msg, warning) {
+    const body = document.getElementById('sql-results-body');
+    body.innerHTML = `<div class="sql-error-box">${escHtml(msg)}</div>${warning ? `<div class="sql-warning-box">${escHtml(warning)}</div>` : ''}`;
+    document.getElementById('sql-res-info').textContent = '';
+}
+
+// ── Upload modal ───────────────────────────────────────────────────────────
+
+function openSqlModal() {
+    document.getElementById('sql-modal-overlay').style.display = 'flex';
+    document.getElementById('sql-modal-err').textContent = '';
+    document.getElementById('sql-file-input').value = '';
+    document.getElementById('sql-chosen-file').textContent = '';
+    document.getElementById('sql-table-name').value = '';
+    const btn = document.getElementById('sql-upload-confirm-btn');
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    btn.querySelector('.run-icon').style.display = '';
+}
+
+function closeSqlModal() {
+    document.getElementById('sql-modal-overlay').style.display = 'none';
+}
+
+async function doSqlUpload() {
+    const fileInput = document.getElementById('sql-file-input');
+    const errEl     = document.getElementById('sql-modal-err');
+    const btn       = document.getElementById('sql-upload-confirm-btn');
+
+    if (!fileInput.files || !fileInput.files[0]) {
+        errEl.textContent = 'Please select a file first.';
+        return;
+    }
+
+    const file  = fileInput.files[0];
+    const tname = document.getElementById('sql-table-name').value.trim();
+    const fd    = new FormData();
+    fd.append('file', file);
+    fd.append('session_id', getSqlSession());
+    if (tname) fd.append('table_name', tname);
+
+    btn.disabled = true;
+    btn.classList.add('loading');
+    errEl.textContent = '';
+
+    try {
+        const res  = await fetch('/sql-api/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.ok) {
+            sqlSchema = data.schema || [];
+            sqlSets   = [];
+            sqlRaw    = '';
+            renderSqlSchema(sqlSchema);
+            renderSqlResults();
+            closeSqlModal();
+            if (sqlSchema.length > 0 && sqlEditor) {
+                sqlEditor.setValue(`SELECT * FROM "${sqlSchema[0].name}" LIMIT 100;`);
+            }
+            const names = sqlSchema.map(t => t.name).join(', ');
+            setStatus('SQL Studio', `Loaded: ${names || file.name}`, 'success');
+        } else {
+            errEl.textContent = data.error || 'Upload failed.';
+        }
+    } catch(e) {
+        errEl.textContent = 'Upload error: ' + e.message;
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('loading');
+    }
+}
+
+async function sqlResetSession() {
+    if (!confirm('Clear your dataset and all changes? This cannot be undone.')) return;
+    try {
+        await fetch(`/sql-api/reset/${getSqlSession()}`, { method: 'POST' });
+    } catch(_) {}
+    try { localStorage.removeItem('pistonsql_session'); } catch(_) {}
+    sqlSchema = [];
+    sqlSets   = [];
+    sqlRaw    = '';
+    renderSqlSchema([]);
+    document.getElementById('sql-results-body').innerHTML = '<span class="sql-empty-msg">Session reset. Upload a file to start again.</span>';
+    document.getElementById('sql-res-info').textContent = '';
+    if (sqlEditor) sqlEditor.setValue('-- Session reset\n-- Upload a .csv or .sql file to start querying\n');
+    setStatus('SQL Studio', 'Session reset', 'default');
+}
+
+// ── Drag-and-drop file on the drop zone ────────────────────────────────────
+
+function escHtml(s) {
+    return String(s)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;');
+}
+
+// ── SQL event listeners ────────────────────────────────────────────────────
+
+document.getElementById('btn-mode-ide').addEventListener('click', () => switchMode('ide'));
+document.getElementById('btn-mode-sql').addEventListener('click', () => switchMode('sql'));
+
+document.getElementById('sql-run-btn').addEventListener('click', sqlRunQuery);
+document.getElementById('sql-kill-btn').addEventListener('click', () => {
+    if (sqlAbortCtrl) { sqlAbortCtrl.abort(); }
+});
+document.getElementById('sql-clear-btn').addEventListener('click', () => {
+    if (sqlEditor) sqlEditor.setValue('');
+});
+document.getElementById('sql-upload-open-btn').addEventListener('click', openSqlModal);
+document.getElementById('sql-schema-reset').addEventListener('click', sqlResetSession);
+
+document.getElementById('sql-modal-x').addEventListener('click', closeSqlModal);
+document.getElementById('sql-upload-cancel-btn').addEventListener('click', closeSqlModal);
+document.getElementById('sql-upload-confirm-btn').addEventListener('click', doSqlUpload);
+
+document.getElementById('sql-modal-overlay').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('sql-modal-overlay')) closeSqlModal();
+});
+
+document.getElementById('sql-file-input').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    document.getElementById('sql-chosen-file').textContent = f ? f.name : '';
+});
+
+// Drag-and-drop highlighting on the drop zone
+const dropZone = document.getElementById('sql-drop-zone');
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) {
+        document.getElementById('sql-file-input').files = e.dataTransfer.files;
+        document.getElementById('sql-chosen-file').textContent = f.name;
+    }
+});
 </script>
 </body>
 </html>
