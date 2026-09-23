@@ -1321,34 +1321,143 @@ document.getElementById('tab-terminal-btn').addEventListener('click', () => show
 document.getElementById('tab-stats-btn').addEventListener('click', () => showTab('stats'));
 
 // ── SQL Studio ─────────────────────────────────────────────────────────────
+//
+// STATELESS ARCHITECTURE — nothing is stored on the server.
+//
+// The browser holds the current SQLite database state in sessionStorage as a
+// SQL dump string. Each query sends {state, query} to the backend, which runs
+// it on Piston and returns {new_state, results}. The browser stores new_state
+// back into sessionStorage, replacing the old state.
+//
+// sessionStorage is cleared on page refresh, so students always start fresh
+// with the pre-seeded sales dataset below. INSERTs/UPDATEs DO persist between
+// queries within the same browser session (tab stay open), but are gone on
+// refresh. Nothing ever touches the VPS beyond the duration of a single HTTP
+// request.
+
+// ── Pre-seeded sales dataset ──────────────────────────────────────────────
+// 60 rows of tech-product sales orders (Jan–Jul 2024, 5 regions, 5 reps).
+// Includes intentional NULLs in sales_rep and discount for practice.
+const SALES_SEED_SQL = `CREATE TABLE IF NOT EXISTS "sales" ("order_id" INTEGER, "order_date" TEXT, "region" TEXT, "sales_rep" TEXT, "product" TEXT, "category" TEXT, "quantity" INTEGER, "unit_price" REAL, "discount" REAL);
+INSERT INTO "sales" VALUES
+(1001,'2024-01-08','North','Aarav Sharma','ThinkPad E14','Laptop',2,68000.0,0.05),
+(1002,'2024-01-09','South','Diya Nair','Dell UltraSharp 24','Monitor',5,21500.0,0.1),
+(1003,'2024-01-11','East','Kabir Bose','Logitech K380','Keyboard',12,2900.0,0.15),
+(1004,'2024-01-12','West','Isha Reddy','Logitech M330','Mouse',20,1450.0,0.05),
+(1005,'2024-01-15','North','Aarav Sharma','Sony WH-CH720','Headset',8,8900.0,NULL),
+(1006,'2024-01-17','Central','Rohan Patel','Logitech C920','Webcam',6,6400.0,0.1),
+(1007,'2024-01-18','South','Diya Nair','MacBook Air M2','Laptop',1,114000.0,0.02),
+(1008,'2024-01-22','East','Kabir Bose','Dell P2422H','Monitor',7,18900.0,NULL),
+(1009,'2024-01-24','West','Isha Reddy','HP Pavilion 15','Laptop',3,62000.0,0.08),
+(1010,'2024-01-29','North','Meera Joshi','Anker USB-C Hub','Docking Station',15,4200.0,0.12),
+(1011,'2024-02-01','Central','Rohan Patel','ThinkPad E14','Laptop',2,68000.0,0.05),
+(1012,'2024-02-05','South','Diya Nair','Bose QC45','Headset',4,24900.0,0.1),
+(1013,'2024-02-06','East',NULL,'Logitech K380','Keyboard',18,2900.0,0.2),
+(1014,'2024-02-08','West','Isha Reddy','Dell UltraSharp 24','Monitor',4,21500.0,NULL),
+(1015,'2024-02-12','North','Aarav Sharma','Logitech M330','Mouse',25,1450.0,0.1),
+(1016,'2024-02-14','Central','Rohan Patel','MacBook Air M2','Laptop',1,114000.0,0.03),
+(1017,'2024-02-19','South','Diya Nair','Logitech C920','Webcam',9,6400.0,0.05),
+(1018,'2024-02-21','East','Kabir Bose','HP Pavilion 15','Laptop',4,62000.0,0.08),
+(1019,'2024-02-26','West','Isha Reddy','Anker USB-C Hub','Docking Station',20,4200.0,NULL),
+(1020,'2024-02-28','North','Meera Joshi','Sony WH-CH720','Headset',10,8900.0,0.15),
+(1021,'2024-03-04','Central','Rohan Patel','Dell P2422H','Monitor',6,18900.0,0.05),
+(1022,'2024-03-06','South','Diya Nair','ThinkPad E14','Laptop',3,68000.0,0.07),
+(1023,'2024-03-08','East','Kabir Bose','Logitech M330','Mouse',30,1450.0,0.18),
+(1024,'2024-03-12','West','Isha Reddy','MacBook Air M2','Laptop',2,114000.0,0.04),
+(1025,'2024-03-14','North','Aarav Sharma','Logitech K380','Keyboard',14,2900.0,NULL),
+(1026,'2024-03-19','Central',NULL,'Dell UltraSharp 24','Monitor',3,21500.0,0.06),
+(1027,'2024-03-21','South','Diya Nair','Bose QC45','Headset',5,24900.0,0.12),
+(1028,'2024-03-26','East','Kabir Bose','Logitech C920','Webcam',7,6400.0,0.09),
+(1029,'2024-03-28','West','Isha Reddy','HP Pavilion 15','Laptop',2,62000.0,NULL),
+(1030,'2024-04-02','North','Meera Joshi','Anker USB-C Hub','Docking Station',12,4200.0,0.1),
+(1031,'2024-04-04','Central','Rohan Patel','Sony WH-CH720','Headset',6,8900.0,0.05),
+(1032,'2024-04-09','South','Diya Nair','Dell P2422H','Monitor',8,18900.0,0.08),
+(1033,'2024-04-11','East','Kabir Bose','ThinkPad E14','Laptop',1,68000.0,0.02),
+(1034,'2024-04-15','West','Isha Reddy','Logitech K380','Keyboard',22,2900.0,0.15),
+(1035,'2024-04-18','North','Aarav Sharma','Dell UltraSharp 24','Monitor',5,21500.0,0.07),
+(1036,'2024-04-23','Central','Rohan Patel','Logitech M330','Mouse',18,1450.0,NULL),
+(1037,'2024-04-25','South','Diya Nair','MacBook Air M2','Laptop',1,114000.0,0.05),
+(1038,'2024-04-29','East','Kabir Bose','Logitech C920','Webcam',4,6400.0,0.1),
+(1039,'2024-05-02','West','Isha Reddy','Bose QC45','Headset',3,24900.0,0.06),
+(1040,'2024-05-07','North','Meera Joshi','HP Pavilion 15','Laptop',3,62000.0,0.09),
+(1041,'2024-05-09','Central','Rohan Patel','Anker USB-C Hub','Docking Station',16,4200.0,0.12),
+(1042,'2024-05-13','South',NULL,'Sony WH-CH720','Headset',7,8900.0,0.08),
+(1043,'2024-05-15','East','Kabir Bose','Dell P2422H','Monitor',5,18900.0,0.05),
+(1044,'2024-05-20','West','Isha Reddy','ThinkPad E14','Laptop',2,68000.0,NULL),
+(1045,'2024-05-22','North','Aarav Sharma','Logitech K380','Keyboard',19,2900.0,0.14),
+(1046,'2024-05-27','Central','Rohan Patel','Dell UltraSharp 24','Monitor',4,21500.0,0.06),
+(1047,'2024-05-29','South','Diya Nair','Logitech M330','Mouse',24,1450.0,0.16),
+(1048,'2024-06-03','East','Kabir Bose','MacBook Air M2','Laptop',1,114000.0,0.03),
+(1049,'2024-06-05','West','Isha Reddy','Logitech C920','Webcam',8,6400.0,NULL),
+(1050,'2024-06-10','North','Meera Joshi','Bose QC45','Headset',4,24900.0,0.1),
+(1051,'2024-06-12','Central','Rohan Patel','HP Pavilion 15','Laptop',2,62000.0,0.07),
+(1052,'2024-06-17','South','Diya Nair','Anker USB-C Hub','Docking Station',18,4200.0,0.11),
+(1053,'2024-06-19','East','Kabir Bose','Sony WH-CH720','Headset',9,8900.0,0.05),
+(1054,'2024-06-24','West','Isha Reddy','Dell P2422H','Monitor',6,18900.0,0.09),
+(1055,'2024-06-26','North','Aarav Sharma','ThinkPad E14','Laptop',1,68000.0,NULL),
+(1056,'2024-07-01','Central','Rohan Patel','Logitech K380','Keyboard',25,2900.0,0.2),
+(1057,'2024-07-03','South','Diya Nair','Dell UltraSharp 24','Monitor',5,21500.0,0.06),
+(1058,'2024-07-08','East','Kabir Bose','Logitech M330','Mouse',21,1450.0,0.13),
+(1059,'2024-07-10','West','Isha Reddy','MacBook Air M2','Laptop',2,114000.0,0.04),
+(1060,'2024-07-15','North','Meera Joshi','Logitech C920','Webcam',6,6400.0,0.08);
+`;
+
+const SALES_SEED_SCHEMA = [{
+    name: 'sales',
+    columns: [
+        { name: 'order_id',   type: 'INTEGER' },
+        { name: 'order_date', type: 'TEXT' },
+        { name: 'region',     type: 'TEXT' },
+        { name: 'sales_rep',  type: 'TEXT' },
+        { name: 'product',    type: 'TEXT' },
+        { name: 'category',   type: 'TEXT' },
+        { name: 'quantity',   type: 'INTEGER' },
+        { name: 'unit_price', type: 'REAL' },
+        { name: 'discount',   type: 'REAL' },
+    ]
+}];
+
+// ── Browser-side state (sessionStorage — cleared on page refresh) ─────────
+
+// Clear state on every page load so students always start with the seed data.
+// sessionStorage itself persists across soft navigations within a tab, so we
+// must explicitly clear it here to guarantee "fresh on refresh" behaviour.
+try { sessionStorage.removeItem('pistonsql_state'); } catch(_) {}
+
+function getSqlState() {
+    try {
+        return sessionStorage.getItem('pistonsql_state') || SALES_SEED_SQL;
+    } catch(_) {
+        return SALES_SEED_SQL;
+    }
+}
+
+function setSqlState(newState) {
+    if (!newState) return;
+    try {
+        sessionStorage.setItem('pistonsql_state', newState);
+    } catch(e) {
+        // sessionStorage full (unlikely with <4 MB state) or blocked in
+        // private mode — state is not saved but the page keeps working.
+        console.warn('SQL state could not be saved to sessionStorage:', e);
+    }
+}
+
+function clearSqlState() {
+    try { sessionStorage.removeItem('pistonsql_state'); } catch(_) {}
+}
 
 let sqlEditor     = null;
 let sqlRunning    = false;
 let sqlAbortCtrl  = null;
 let sqlSchema     = [];
-let sqlSets       = [];   // parsed result sets [{columns, rows}]
-let sqlRaw        = '';   // text/raw output
+let sqlSets       = [];
+let sqlRaw        = '';
 let sqlActiveTab  = 'table';
-
-function getSqlSession() {
-    try {
-        let id = localStorage.getItem('pistonsql_session');
-        const ok = /^[A-Za-z0-9_-]{8,64}$/.test(id || '');
-        if (!ok) {
-            const arr = new Uint8Array(16);
-            crypto.getRandomValues(arr);
-            id = Array.from(arr, b => b.toString(16).padStart(2,'0')).join('');
-            localStorage.setItem('pistonsql_session', id);
-        }
-        return id;
-    } catch(_) {
-        return Math.random().toString(36).slice(2) + Date.now().toString(36);
-    }
-}
 
 function initSqlEditor() {
     sqlEditor = monaco.editor.create(document.getElementById('sql-editor'), {
-        value: '-- Welcome to SQL Studio\n-- Upload a .csv or .sql file, then query it here\n-- Tip: Ctrl+Enter to run\n\nSELECT * FROM employees LIMIT 10;',
+        value: '-- SQL Studio  |  Pre-loaded: sales (60 rows)\n-- Ctrl+Enter to run\n\nSELECT * FROM sales LIMIT 10;',
         language: 'sql',
         theme: 'vs-dark',
         fontSize: 14,
@@ -1416,7 +1525,12 @@ function switchMode(mode) {
         sqlCtrl.style.display   = 'flex';
         btnIde.classList.remove('active');
         btnSql.classList.add('active');
-        setStatus('SQL Studio', 'Ready — Ctrl+Enter to run', 'default');
+        setStatus('SQL Studio', 'Ready — pre-loaded: sales · Ctrl+Enter to run', 'default');
+        // Show the sales schema panel on first open (before any query is run).
+        if (sqlSchema.length === 0) {
+            sqlSchema = SALES_SEED_SCHEMA;
+            renderSqlSchema(sqlSchema);
+        }
         setTimeout(() => { try { sqlEditor && sqlEditor.layout(); } catch(_) {} }, 60);
     } else {
         ideMain.style.display   = 'flex';
@@ -1439,23 +1553,34 @@ async function sqlRunQuery() {
     const query = sqlEditor.getValue().trim();
     if (!query) return;
 
-    sqlRunning = true;
+    // Read current state from sessionStorage (or fall back to the seed data).
+    const currentState = getSqlState();
+
+    sqlRunning   = true;
     sqlAbortCtrl = new AbortController();
     document.getElementById('sql-run-btn').disabled = true;
     document.getElementById('sql-run-btn').classList.add('loading');
     document.getElementById('sql-kill-btn').classList.add('visible');
-    setStatus('SQL Studio', 'Running...', 'running');
+    setStatus('SQL Studio', 'Running…', 'running');
     document.getElementById('sql-results-body').innerHTML = '<span class="sql-empty-msg">Running…</span>';
     document.getElementById('sql-res-info').textContent = '';
 
     try {
         const res  = await fetch('/sql-api/execute', {
-            method: 'POST',
+            method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: getSqlSession(), query }),
-            signal: sqlAbortCtrl.signal,
+            // State is the full SQL dump from the last run (or the seed data on
+            // first run). Backend returns new_state which we store back below.
+            body:    JSON.stringify({ state: currentState, query }),
+            signal:  sqlAbortCtrl.signal,
         });
         const data = await res.json();
+
+        // Persist the updated database state in sessionStorage for the next query.
+        // On page refresh sessionStorage is cleared, giving students a fresh start.
+        if (data.new_state) {
+            setSqlState(data.new_state);
+        }
 
         if (data.schema && data.schema.length > 0) {
             sqlSchema = data.schema;
@@ -1485,7 +1610,7 @@ async function sqlRunQuery() {
             setStatus('SQL Studio', 'Backend error', 'error');
         }
     } finally {
-        sqlRunning = false;
+        sqlRunning   = false;
         sqlAbortCtrl = null;
         document.getElementById('sql-run-btn').disabled = false;
         document.getElementById('sql-run-btn').classList.remove('loading');
@@ -1502,9 +1627,9 @@ function renderSqlSchema(tables) {
     if (!tables || tables.length === 0) {
         body.innerHTML = `<div class="sql-schema-empty">
             <span class="sql-schema-empty-icon">🗄️</span>
-            No dataset loaded.<br>
-            <span style="color:var(--accent)">Upload a .csv or .sql</span><br>
-            file to start querying.
+            No tables yet.<br>
+            Run a query or upload a<br>
+            <span style="color:var(--accent)">.csv / .sql file</span> to load data.
         </div>`;
         resetB.style.display = 'none';
         return;
@@ -1613,7 +1738,8 @@ function openSqlModal() {
     const btn = document.getElementById('sql-upload-confirm-btn');
     btn.disabled = false;
     btn.classList.remove('loading');
-    btn.querySelector('.run-icon').style.display = '';
+    const icon = btn.querySelector('.run-icon');
+    if (icon) icon.style.display = '';
 }
 
 function closeSqlModal() {
@@ -1647,6 +1773,10 @@ async function doSqlUpload() {
         const res  = await fetch('/sql-api/upload', { method: 'POST', body: fd });
         const data = await res.json();
         if (data.ok) {
+            // Backend returns the seed SQL; store it in sessionStorage so
+            // subsequent queries use this dataset instead of the default sales data.
+            // Nothing is stored on the server — this is the full upload payload.
+            setSqlState(data.seed_sql || '');
             sqlSchema = data.schema || [];
             sqlSets   = [];
             sqlRaw    = '';
@@ -1669,20 +1799,17 @@ async function doSqlUpload() {
     }
 }
 
-async function sqlResetSession() {
-    if (!confirm('Clear your dataset and all changes? This cannot be undone.')) return;
-    try {
-        await fetch(`/sql-api/reset/${getSqlSession()}`, { method: 'POST' });
-    } catch(_) {}
-    try { localStorage.removeItem('pistonsql_session'); } catch(_) {}
-    sqlSchema = [];
+function sqlResetSession() {
+    if (!confirm('Reset to the default sales dataset? All your changes will be cleared.')) return;
+    clearSqlState();                       // wipe sessionStorage → seed SQL used on next run
+    sqlSchema = SALES_SEED_SCHEMA;
     sqlSets   = [];
     sqlRaw    = '';
-    renderSqlSchema([]);
-    document.getElementById('sql-results-body').innerHTML = '<span class="sql-empty-msg">Session reset. Upload a file to start again.</span>';
+    renderSqlSchema(sqlSchema);
+    document.getElementById('sql-results-body').innerHTML = '<span class="sql-empty-msg">Reset to default sales data. Run a query to start.</span>';
     document.getElementById('sql-res-info').textContent = '';
-    if (sqlEditor) sqlEditor.setValue('-- Session reset\n-- Upload a .csv or .sql file to start querying\n');
-    setStatus('SQL Studio', 'Session reset', 'default');
+    if (sqlEditor) sqlEditor.setValue('-- Reset to default sales dataset\n\nSELECT * FROM sales LIMIT 10;');
+    setStatus('SQL Studio', 'Reset to default sales data', 'default');
 }
 
 // ── Drag-and-drop file on the drop zone ────────────────────────────────────

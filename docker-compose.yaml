@@ -185,45 +185,25 @@ services:
     networks:
       - piston_net
 
-  # ── Redis — SQL session state (INSERT/UPDATE/DELETE persist between runs) ───
-  redis:
-    image: redis:7-alpine
-    container_name: piston_redis
-    restart: unless-stopped
-    # volatile-lru: evicts only keys with a TTL (session state), never config.
-    # Under memory pressure it drops the least-recently-used session first —
-    # a student who finished — rather than refusing all writes.
-    command: redis-server --maxmemory 512mb --maxmemory-policy volatile-lru
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    networks:
-      - piston_net
-
-  # ── SQL Backend — FastAPI that wraps Piston's sqlite3 runtime ───────────────
-  # Each student gets an isolated SQLite session stored in Redis (1 h TTL).
-  # The backend wraps every query with the session's .dump as seed SQL so
-  # INSERT/UPDATE/DELETE survive between runs without modifying Piston at all.
+  # ── SQL Backend — stateless FastAPI wrapping Piston's sqlite3 runtime ──────
+  # Stateless: the browser supplies the current DB state with every request and
+  # receives the updated state back. No Redis, no sessions, no shared mutable
+  # state — scales horizontally and is safe to restart at any time.
   sql-backend:
     build: sql-backend
     container_name: piston_sql_backend
     restart: unless-stopped
+    mem_limit: 256m
+    memswap_limit: 256m
     environment:
-      # Port 2001 is the internal nginx listener with NO rate limiting — all
-      # sql-backend requests share one container IP so port 2000's burst=60 bucket
-      # would 429-reject every student query past the 60th simultaneous request.
+      # Port 2001: internal nginx listener with no rate limiting.
+      # All sql-backend → Piston calls share one container IP, so routing through
+      # port 2000's burst=60 zone would 429 every query past the 60th simultaneous.
       - PISTON_URL=http://nginx:2001
-      - REDIS_URL=redis://redis:6379
-      - SESSION_TTL=3600          # 1 h — session state auto-expires
-      - MAX_SEED_BYTES=4194304    # 4 MB max stored state per session
-      - EXECUTE_TIMEOUT=30        # wall-clock seconds per query
-      - RUN_CPU_TIME=10           # CPU seconds per query
-      - PISTON_LOG_PAYLOAD=false  # set true to debug query payloads
-    depends_on:
-      redis:
-        condition: service_healthy
+      - EXECUTE_TIMEOUT=30       # wall-clock seconds per query
+      - RUN_CPU_TIME=10          # CPU seconds per query
+      - MAX_STATE_BYTES=4194304  # 4 MB max state round-trip
+      - PISTON_LOG_PAYLOAD=false
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
       interval: 10s

@@ -1,24 +1,23 @@
 """
-PistonSQL backend - a small FastAPI service that fronts an *unmodified*
-Piston engine (ghcr.io/engineer-man/piston). Piston itself is never patched;
-we only POST to /api/v2/execute.
+PistonSQL backend — stateless FastAPI service wrapping Piston's sqlite3 runtime.
 
-Two things make the persistence story work:
+State model:
+  The caller (browser) supplies the current database state as a SQL dump string and
+  receives the new state after the query runs. Nothing is stored server-side. The
+  browser keeps state in sessionStorage (cleared on page refresh, so students always
+  start from the pre-seeded dataset).
 
-1. `build_script` composes the script handed to Piston:
-       seed data -> user query -> sentinel markers -> `.dump`
-   We capture the resulting database state from `.dump` and store it in Redis,
-   so the next run starts from where the previous one ended. That is what makes
-   INSERT/UPDATE/DELETE persist between runs.
+Request/response per query:
+  POST /api/execute  { state: "<SQL dump from last run>", query: "<student SQL>" }
+    → Piston executes: state_sql + user_query + sentinel-framed .dump
+    → backend parses results + new_state from stdout
+  response: { ok, new_state, parsed: {sets, raw}, error, warning, schema }
 
-2. The dump is framed by *random, per-request* sentinel markers on stdout
-   instead of being read off stderr. stderr also carries SQL error text, so
-   treating stderr as "the state" (as an earlier revision did) meant a single
-   typo overwrote the session's dataset with a parse-error message. Errors are
-   now reported separately and can never contaminate stored state.
+POST /api/upload  (multipart)
+  → validates + converts .csv or .sql to SQL text
+  → returns { ok, seed_sql, schema }  — browser stores seed_sql in sessionStorage
 """
 
-import asyncio
 import csv
 import io
 import json
@@ -30,7 +29,6 @@ from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 import httpx
-import redis.asyncio as aioredis
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -40,113 +38,35 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 PISTON_URL = os.getenv("PISTON_URL", "http://piston:2000")
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
-# "*" lets Piston resolve whichever sqlite3 build is actually installed, so the
-# backend does not have to be kept in lockstep with the engine's package list.
 PISTON_SQLITE_VERSION = os.getenv("PISTON_SQLITE_VERSION", "*")
 
-# Opt-in request logging: prints the exact HTTP body this service POSTs to the
-# engine. Off by default, because that body contains the student's own SQL and
-# their dataset. Turn it on deliberately (PISTON_LOG_PAYLOAD=true) when you want
-# to inspect what the engine receives, then turn it back off.
-LOG_PISTON_PAYLOAD = os.getenv("PISTON_LOG_PAYLOAD", "").strip().lower() in {
-    "1", "true", "yes", "on",
-}
+LOG_PISTON_PAYLOAD = os.getenv("PISTON_LOG_PAYLOAD", "").strip().lower() in {"1", "true", "yes", "on"}
 LOG_PISTON_PAYLOAD_MAX = int(os.getenv("PISTON_LOG_PAYLOAD_MAX", "8000"))
 
-SESSION_TTL = int(os.getenv("SESSION_TTL", "3600"))
 EXECUTE_TIMEOUT = float(os.getenv("EXECUTE_TIMEOUT", "30"))
-RUN_CPU_TIME = float(os.getenv("RUN_CPU_TIME", "10"))
-MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(8 * 1024 * 1024)))
-MAX_SEED_BYTES = int(os.getenv("MAX_SEED_BYTES", str(4 * 1024 * 1024)))
+RUN_CPU_TIME    = float(os.getenv("RUN_CPU_TIME", "10"))
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(8 * 1024 * 1024)))   # 8 MB upload cap
+MAX_STATE_BYTES  = int(os.getenv("MAX_STATE_BYTES",  str(4 * 1024 * 1024)))   # 4 MB max state round-trip
 
-# Result shaping. A room full of students all running `SELECT *` on a wide
-# table must not be able to hand the browser hundreds of thousands of cells to
-# lay out, or blow up this process's memory building the JSON.
-MAX_RESULT_ROWS = int(os.getenv("MAX_RESULT_ROWS", "1000"))
-MAX_RESULT_SETS = int(os.getenv("MAX_RESULT_SETS", "25"))
+MAX_RESULT_ROWS       = int(os.getenv("MAX_RESULT_ROWS", "1000"))
+MAX_RESULT_SETS       = int(os.getenv("MAX_RESULT_SETS", "25"))
 MAX_TOTAL_RESULT_ROWS = int(os.getenv("MAX_TOTAL_RESULT_ROWS", "5000"))
 
-# Piston queues jobs once max_concurrent_jobs is reached, so the time a request
-# may spend waiting for a free slot has to be budgeted on top of its own run
-# timeout - otherwise a busy engine looks like a hung engine.
-QUEUE_HEADROOM = float(os.getenv("QUEUE_HEADROOM", "20"))
+# Piston queues jobs when max_concurrent_jobs is reached, so we budget extra time
+# on top of the run timeout for the queuing wait.
+QUEUE_HEADROOM      = float(os.getenv("QUEUE_HEADROOM", "20"))
 PISTON_MAX_CONNECTIONS = int(os.getenv("PISTON_MAX_CONNECTIONS", "64"))
 
-# Rows per INSERT when turning a CSV into seed SQL. Kept well under SQLite's
-# SQLITE_MAX_COMPOUND_SELECT default so it stays safe on every build.
+PISTON_CALL_TIMEOUT = EXECUTE_TIMEOUT + QUEUE_HEADROOM
+
 CSV_INSERT_CHUNK = int(os.getenv("CSV_INSERT_CHUNK", "250"))
 
-STATE_KEY = "pistonsql:state:{sid}"
-
-redis_client: Optional[aioredis.Redis] = None
 http_client: Optional[httpx.AsyncClient] = None
-
-PISTON_CALL_TIMEOUT = EXECUTE_TIMEOUT + QUEUE_HEADROOM
-# How long a request waits for its session's guard before giving up. Longer
-# than one full engine call, so a queued request still gets its turn.
-SESSION_LOCK_TIMEOUT = PISTON_CALL_TIMEOUT + 5
-
-
-class SessionBusy(Exception):
-    """Raised when a session's guard cannot be taken within the timeout."""
-
-
-class _SessionLock:
-    """A per-session lock plus a count of the callers currently referencing it."""
-
-    __slots__ = ("lock", "refs")
-
-    def __init__(self) -> None:
-        self.lock = asyncio.Lock()
-        self.refs = 0
-
-
-# Serialises read-modify-write cycles per session. Without this, two concurrent
-# runs against the same session both read the same seed and the slower one
-# overwrites the other's committed changes.
-#
-# Entries are reference counted rather than pruned on a size threshold. A lock
-# may only be removed once nobody references it *and* it is unlocked, so it can
-# never be dropped while a coroutine is still queued on it - which would hand
-# two callers different locks for the same session and silently break mutual
-# exclusion.
-_session_locks: dict[str, _SessionLock] = {}
-_session_locks_guard = asyncio.Lock()
-
-
-@asynccontextmanager
-async def session_guard(session_id: str, timeout: float):
-    async with _session_locks_guard:
-        entry = _session_locks.get(session_id)
-        if entry is None:
-            entry = _SessionLock()
-            _session_locks[session_id] = entry
-        entry.refs += 1
-
-    acquired = False
-    try:
-        try:
-            await asyncio.wait_for(entry.lock.acquire(), timeout=timeout)
-        except asyncio.TimeoutError as exc:
-            raise SessionBusy() from exc
-        acquired = True
-        yield
-    finally:
-        if acquired:
-            entry.lock.release()
-        async with _session_locks_guard:
-            entry.refs -= 1
-            if entry.refs <= 0 and not entry.lock.locked():
-                _session_locks.pop(session_id, None)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global redis_client, http_client
-    redis_client = aioredis.from_url(
-        REDIS_URL, decode_responses=True, socket_connect_timeout=5
-    )
+    global http_client
     http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(
             connect=10.0,
@@ -162,7 +82,6 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        await redis_client.aclose()
         await http_client.aclose()
 
 
@@ -177,15 +96,13 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
-# Small helpers
+# Helpers
 # ---------------------------------------------------------------------------
 
 _IDENT_RE = re.compile(r"[^A-Za-z0-9_]")
-SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
-_INT_RE = re.compile(r"^[+-]?\d+$")
+_INT_RE  = re.compile(r"^[+-]?\d+$")
 _REAL_RE = re.compile(r"^[+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?$")
 
-# Constraint keywords that terminate a column's declared type.
 _CONSTRAINT_RE = re.compile(
     r"\b(PRIMARY\s+KEY|NOT\s+NULL|UNIQUE|CHECK|FOREIGN\s+KEY|CONSTRAINT|"
     r"DEFAULT|COLLATE|REFERENCES|GENERATED|AUTOINCREMENT)\b",
@@ -200,17 +117,11 @@ _COL_NAME_RE = re.compile(
     r'^(?:"([^"]+)"|`([^`]+)`|\[([^\]]+)\]|([A-Za-z_][A-Za-z0-9_]*))\s*(.*)$',
     re.DOTALL,
 )
-# Table-level constraints (PRIMARY KEY (a, b), FOREIGN KEY (...) REFERENCES ...)
-# sit in the same comma-separated list as the columns but are not columns. Left
-# alone they show up in the schema panel as a bogus "FOREIGN" or "PRIMARY" column.
 _TABLE_CONSTRAINT_RE = re.compile(
     r"^(?:CONSTRAINT\s+\S+\s+)?(?:PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE|CHECK|KEY)\b",
     re.IGNORECASE,
 )
 
-# Things a query may not do. The isolate sandbox is the real boundary; this is
-# defence in depth so a crafted query cannot break the state-capture harness or
-# touch the sandbox filesystem through SQLite's shell helper functions.
 _FORBIDDEN_QUERY = (
     (re.compile(r"^\s*\.", re.MULTILINE),
      "sqlite3 shell dot-commands (lines starting with '.') are not allowed"),
@@ -226,7 +137,6 @@ _FORBIDDEN_QUERY = (
 
 
 def sanitize_identifier(raw: str, fallback: str = "data") -> str:
-    """Turn arbitrary user text into a safe bare SQL identifier."""
     name = _IDENT_RE.sub("_", (raw or "").strip())
     name = re.sub(r"_+", "_", name).strip("_")
     if not name:
@@ -245,7 +155,6 @@ def sql_literal(value: str) -> str:
 
 
 def check_query_safety(sql: str) -> Optional[str]:
-    """Return an error message when the SQL is not allowed, else None."""
     for pattern, message in _FORBIDDEN_QUERY:
         if pattern.search(sql):
             return message
@@ -253,7 +162,7 @@ def check_query_safety(sql: str) -> Optional[str]:
 
 
 def infer_column_type(values: list[str]) -> str:
-    """Infer an SQLite affinity from sample values. Unknown -> TEXT."""
+    saw_value = all_int = all_numeric = True
     saw_value = False
     all_int = True
     all_numeric = True
@@ -277,7 +186,6 @@ def infer_column_type(values: list[str]) -> str:
 
 
 def split_top_level(text: str) -> list[str]:
-    """Split on commas that are not inside parens or quotes."""
     parts: list[str] = []
     buf: list[str] = []
     depth = 0
@@ -307,24 +215,16 @@ def split_top_level(text: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Dataset conversion + schema introspection
+# Dataset conversion + schema
 # ---------------------------------------------------------------------------
 
 def _csv_cell_literal(cell: str) -> str:
-    """A blank CSV cell becomes NULL rather than an empty string."""
     value = cell.strip()
     return "NULL" if value == "" else sql_literal(value)
 
 
 def csv_to_sql(table_name: str, csv_text: str) -> str:
-    """
-    Convert CSV text into CREATE TABLE + INSERT statements.
-
-    Empty cells become NULL rather than ''. Treating a blank as "no value" is
-    what a CSV import normally means, and it makes `WHERE col IS NULL` behave
-    the way a student practising SQL would predict.
-    """
-    text = csv_text.lstrip("\ufeff")
+    text = csv_text.lstrip("﻿")
     reader = csv.reader(io.StringIO(text))
     rows = [r for r in reader if any(cell.strip() for cell in r)]
     if not rows:
@@ -348,34 +248,25 @@ def csv_to_sql(table_name: str, csv_text: str) -> str:
         cells = list(row[:width]) + [""] * max(0, width - len(row))
         body.append(cells)
 
-    column_types = [
-        infer_column_type([row[i] for row in body]) for i in range(width)
-    ]
-
+    column_types = [infer_column_type([row[i] for row in body]) for i in range(width)]
     column_defs = ", ".join(
         f"{quote_ident(name)} {ctype}"
         for name, ctype in zip(headers, column_types)
     )
     statements = [f"CREATE TABLE IF NOT EXISTS {quote_ident(table_name)} ({column_defs});"]
 
-    # Several INSERTs instead of one enormous VALUES list: each statement stays
-    # small, and it keeps clear of SQLite's compound-SELECT term limit on older
-    # builds (the engine runs 3.36.0, this was developed against 3.53).
     for start in range(0, len(body), CSV_INSERT_CHUNK):
         chunk = body[start:start + CSV_INSERT_CHUNK]
         values_sql = ",\n".join(
             "(" + ", ".join(_csv_cell_literal(cell) for cell in row) + ")"
             for row in chunk
         )
-        statements.append(
-            f"INSERT INTO {quote_ident(table_name)} VALUES\n{values_sql};"
-        )
+        statements.append(f"INSERT INTO {quote_ident(table_name)} VALUES\n{values_sql};")
 
     return "\n".join(statements) + "\n"
 
 
 def sql_file_to_seed(sql_text: str) -> str:
-    """Validate an uploaded .sql file and return it as seed data."""
     reason = check_query_safety(sql_text)
     if reason:
         raise ValueError(f"The uploaded .sql file contains something unsafe: {reason}")
@@ -383,7 +274,6 @@ def sql_file_to_seed(sql_text: str) -> str:
 
 
 def extract_schema(dump: str) -> list[dict[str, Any]]:
-    """Parse CREATE TABLE statements out of a dump into table schemas."""
     tables: list[dict[str, Any]] = []
     for match in _CREATE_TABLE_RE.finditer(dump):
         raw_name = match.group(1)
@@ -410,41 +300,40 @@ def extract_schema(dump: str) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Piston script composition + result parsing
+# Piston script + result parsing
 # ---------------------------------------------------------------------------
 
-def build_script(seed_sql: str, user_query: str, nonce: str) -> dict[str, str]:
+def build_script(state_sql: str, user_query: str, nonce: str) -> dict[str, str]:
     """
-    Compose the script handed to Piston, returning it with its sentinel markers.
+    Compose the sqlite3 script handed to Piston.
 
-    The sentinels are emitted under `.mode list` with an empty separator so each
-    one lands on its own line as a bare string. That matters: under `.mode json`
-    a marker is echoed as `[{"'<marker>'":"<marker>"}]`, so a naive `find()`
-    lands in the middle of that object and line arithmetic has to compensate.
-    Bare markers make extraction depend only on the marker text - which is
-    random per request - rather than on how a given SQLite build formats output.
+    Layout:
+      1. Drop argv (Piston's sqlite3 runner pre-creates it; re-feeding a dump
+         would fail with "table already exists" without this drop).
+      2. state_sql  — the student's accumulated database from prior runs.
+      3. user_query — what the student typed this run.
+      4. Sentinel + .dump — captures the updated database state for the browser
+         to store and send back on the next run.
 
-    The two `DROP TABLE IF EXISTS argv` statements are also deliberate. Piston's
-    sqlite3 `run` script begins every job with `create table argv (arg text);`,
-    without IF NOT EXISTS, before our code runs. A saved dump would contain that
-    table too, so re-feeding it would fail with "table argv already exists" on
-    every run after the first. Dropping it up front avoids the collision, and
-    dropping it again before the dump keeps it out of the state we persist.
+    Sentinels are emitted under `.mode list` with an empty separator so each
+    lands as a bare string on its own line. Under `.mode json` a sentinel would
+    be wrapped in JSON brackets, making extraction depend on how a given SQLite
+    build formats output. Bare mode avoids that dependency entirely.
     """
     results_end = f"__PSQL_{nonce}_RESULTS_END__"
-    dump_begin = f"__PSQL_{nonce}_DUMP_BEGIN__"
-    dump_end = f"__PSQL_{nonce}_DUMP_END__"
+    dump_begin  = f"__PSQL_{nonce}_DUMP_BEGIN__"
+    dump_end    = f"__PSQL_{nonce}_DUMP_END__"
 
     parts = [
         ".headers off",
         ".mode json",
         "DROP TABLE IF EXISTS argv;",
-        seed_sql.rstrip("\n"),
+        state_sql.rstrip("\n"),
         "",
         "-- ==== user query ====",
         user_query.rstrip("\n"),
         "",
-        "-- ==== state capture (never shown to the user) ====",
+        "-- ==== state capture ====",
         ".mode list",
         ".separator ''",
         f"SELECT {sql_literal(results_end)};",
@@ -462,19 +351,16 @@ def build_script(seed_sql: str, user_query: str, nonce: str) -> dict[str, str]:
     }
 
 
-def parse_piston_stdout(
-    stdout: str, markers: dict[str, str]
-) -> tuple[str, Optional[str]]:
+def parse_piston_stdout(stdout: str, markers: dict[str, str]) -> tuple[str, Optional[str]]:
     """
-    Split Piston's stdout into (results_text, db_state).
+    Split Piston's stdout into (results_text, new_state).
 
-    `db_state` is None when a trailing sentinel is missing, which is what
-    happens if the engine truncates its output. Callers must NOT persist state
-    in that case: a half-captured dump would corrupt the whole session.
+    Returns new_state=None when a trailing sentinel is missing, which means the
+    engine truncated its output. Callers must NOT replace the stored state in that
+    case — a partial dump would corrupt the session.
     """
     results_at = stdout.find(markers["results_end"])
     if results_at == -1:
-        # No sentinel at all: the run died before it could report anything.
         return stdout, None
     results_text = stdout[:results_at]
 
@@ -494,13 +380,6 @@ def parse_piston_stdout(
 
 
 def parse_result_sets(results_text: str) -> list[dict[str, Any]]:
-    """
-    Decode json-mode output into result sets.
-
-    SQLite's json mode pretty-prints, so a single result set can span many
-    lines (one object per row) and an empty result emits nothing at all. We
-    therefore scan with JSONDecoder.raw_decode rather than parsing line by line.
-    """
     decoder = json.JSONDecoder()
     sets: list[dict[str, Any]] = []
     index = 0
@@ -542,7 +421,6 @@ def _cell_to_text(value: Any) -> Optional[str]:
 
 
 def render_sets_as_text(sets: list[dict[str, Any]]) -> str:
-    """Render result sets as readable, column-aligned text for the Raw view."""
     if not sets:
         return ""
     blocks: list[str] = []
@@ -554,39 +432,42 @@ def render_sets_as_text(sets: list[dict[str, Any]]) -> str:
             if rows else len(columns[i])
             for i in range(len(columns))
         ]
-        header = " | ".join(c.ljust(widths[i]) for i, c in enumerate(columns))
+        header  = " | ".join(c.ljust(widths[i]) for i, c in enumerate(columns))
         divider = "-+-".join("-" * w for w in widths)
-        lines = [header, divider]
+        lines   = [header, divider]
         for row in rows:
             lines.append(
-                " | ".join(
-                    (row[i] or "NULL").ljust(widths[i]) for i in range(len(columns))
-                )
+                " | ".join((row[i] or "NULL").ljust(widths[i]) for i in range(len(columns)))
             )
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
 
 
+def _limit_result_sets(sets: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], bool]:
+    trimmed = False
+    if len(sets) > MAX_RESULT_SETS:
+        sets = sets[:MAX_RESULT_SETS]
+        trimmed = True
+
+    budget = MAX_TOTAL_RESULT_ROWS
+    output: list[dict[str, Any]] = []
+    for result in sets:
+        if budget <= 0:
+            trimmed = True
+            break
+        rows = result["rows"]
+        cap  = min(MAX_RESULT_ROWS, budget)
+        if len(rows) > cap:
+            rows    = rows[:cap]
+            trimmed = True
+        budget -= len(rows)
+        output.append({"columns": result["columns"], "rows": rows})
+    return output, trimmed
+
+
 # ---------------------------------------------------------------------------
-# Session state
+# Piston call
 # ---------------------------------------------------------------------------
-
-def state_key(session_id: str) -> str:
-    return STATE_KEY.format(sid=session_id)
-
-
-def valid_session_id(session_id: str) -> bool:
-    return bool(SESSION_ID_RE.match(session_id or ""))
-
-
-async def read_state(session_id: str) -> str:
-    value = await redis_client.get(state_key(session_id))
-    return value or ""
-
-
-async def write_state(session_id: str, state: str) -> None:
-    await redis_client.setex(state_key(session_id), SESSION_TTL, state)
-
 
 class PistonUnavailable(Exception):
     pass
@@ -599,10 +480,6 @@ async def execute_on_piston(script: str) -> dict[str, Any]:
         "files": [{"name": "main.sql", "content": script}],
         "stdin": "",
         "args": [],
-        # The per-request timeouts do override the engine's config defaults
-        # (api/v2.js: `run_timeout ?? rt.timeouts.run`), but the CPU-time limit
-        # does not inherit from run_timeout, so it has to be set explicitly or
-        # a heavy query dies after the stock 3 seconds.
         "run_timeout": int(EXECUTE_TIMEOUT * 1000),
         "run_cpu_time": int(RUN_CPU_TIME * 1000),
     }
@@ -612,19 +489,16 @@ async def execute_on_piston(script: str) -> dict[str, Any]:
         truncated = len(body) > LOG_PISTON_PAYLOAD_MAX
         logger.info(
             ">>> POST %s/api/v2/execute  body=%d bytes%s\n%s",
-            PISTON_URL,
-            len(body),
+            PISTON_URL, len(body),
             " (truncated)" if truncated else "",
             body[:LOG_PISTON_PAYLOAD_MAX],
         )
 
     try:
-        response = await http_client.post(
-            f"{PISTON_URL}/api/v2/execute", json=payload
-        )
+        response = await http_client.post(f"{PISTON_URL}/api/v2/execute", json=payload)
     except httpx.TimeoutException as exc:
         raise PistonUnavailable(
-            "The execution engine timed out. Try a smaller dataset or simpler query."
+            "The execution engine timed out. Try a simpler query or smaller dataset."
         ) from exc
     except httpx.HTTPError as exc:
         raise PistonUnavailable(
@@ -632,10 +506,14 @@ async def execute_on_piston(script: str) -> dict[str, Any]:
         ) from exc
 
     if response.status_code == 400:
-        detail = _piston_error_detail(response)
+        try:
+            body = response.json()
+            detail = str(body.get("message") or body)[:300]
+        except Exception:
+            detail = response.text[:300]
         logger.error("Piston rejected the request: %s", detail)
         raise PistonUnavailable(
-            f"The execution engine rejected the request: {detail} "
+            f"The execution engine rejected the request: {detail}. "
             "This usually means the sqlite3 runtime is not installed yet."
         )
     if response.status_code != 200:
@@ -647,45 +525,115 @@ async def execute_on_piston(script: str) -> dict[str, Any]:
     return response.json().get("run", {}) or {}
 
 
-def _piston_error_detail(response: httpx.Response) -> str:
+# ---------------------------------------------------------------------------
+# Core query runner (stateless)
+# ---------------------------------------------------------------------------
+
+async def _run_query(state: str, query: str) -> JSONResponse:
+    """
+    Execute one query and return the updated state to the caller.
+
+    The caller supplies the current DB state (a .dump-format SQL string from the
+    previous run, or the pre-seeded data on first run). The updated state is
+    returned in the response and stored by the browser — nothing is written
+    server-side.
+    """
+    nonce   = secrets.token_hex(8)
+    markers = build_script(state, query, nonce)
+
     try:
-        body = response.json()
-        return str(body.get("message") or body)[:300]
-    except Exception:
-        return response.text[:300]
+        run = await execute_on_piston(markers["script"])
+    except PistonUnavailable as exc:
+        return JSONResponse(status_code=503, content={"error": str(exc)})
+
+    stdout    = run.get("stdout", "") or ""
+    stderr    = run.get("stderr", "") or ""
+    exit_code = run.get("code", 0)
+
+    results_text, new_state = parse_piston_stdout(stdout, markers)
+
+    # If capture fails (truncated output), preserve the original state rather
+    # than returning None — the browser should keep what it had, not lose data.
+    state_captured = new_state is not None
+    if not state_captured:
+        logger.warning("State capture failed — output likely truncated by engine")
+        new_state = state
+
+    result_sets, rows_trimmed = _limit_result_sets(parse_result_sets(results_text))
+    raw        = render_sets_as_text(result_sets)
+    error_text = stderr.strip()
+
+    engine_status  = run.get("status")
+    engine_message = run.get("message")
+
+    if engine_status == "OL":
+        error_text = (
+            "The result was too large for the execution engine. "
+            "Try adding a LIMIT clause or selecting fewer columns."
+        )
+    elif engine_status == "EL":
+        error_text = "The query produced too much error output."
+    elif engine_status == "TO":
+        error_text = "The query was stopped because it exceeded the time limit."
+    elif engine_status == "SG":
+        error_text = (
+            f"The query was killed by the engine"
+            f"{': ' + engine_message if engine_message else ''}. "
+            "It may have used too much memory."
+        )
+    elif engine_status == "XX":
+        error_text = (
+            f"The execution engine hit an internal error"
+            f"{': ' + engine_message if engine_message else ''}."
+        )
+
+    warning = ""
+    if not state_captured:
+        warning = (
+            "Output was truncated by the engine — your changes were not saved. "
+            "Raise PISTON_OUTPUT_MAX_SIZE or simplify your query."
+        )
+    if rows_trimmed:
+        warning = (warning + " " if warning else "") + (
+            f"Results trimmed to {MAX_RESULT_ROWS} rows per statement, "
+            f"{MAX_TOTAL_RESULT_ROWS} rows and {MAX_RESULT_SETS} statements per run."
+        )
+
+    return JSONResponse(content={
+        "ok":       exit_code == 0 and not error_text,
+        "new_state": new_state,
+        "output":   raw,
+        "parsed":   {"sets": result_sets, "raw": raw},
+        "error":    error_text,
+        "warning":  warning,
+        "schema":   extract_schema(new_state),
+    })
 
 
 # ---------------------------------------------------------------------------
-# API
+# API endpoints
 # ---------------------------------------------------------------------------
 
 @app.get("/api/health")
 async def health():
-    """Cheap liveness probe used by the container healthcheck."""
     return {"status": "ok", "service": "PistonSQL"}
 
 
 @app.get("/api/ready")
 async def ready():
-    """Deeper readiness probe: Redis reachable and sqlite3 installed in Piston."""
+    """Deep readiness probe: check Piston is reachable and sqlite3 is installed."""
     problems: list[str] = []
-    try:
-        await redis_client.ping()
-    except Exception as exc:
-        problems.append(f"redis unreachable: {exc}")
-
-    runtime_ok = False
     try:
         response = await http_client.get(f"{PISTON_URL}/api/v2/runtimes")
         if response.status_code == 200:
             runtimes = response.json()
-            runtime_ok = any(
-                item.get("language") == "sqlite3"
+            if not any(
+                isinstance(item, dict) and item.get("language") == "sqlite3"
                 for item in runtimes
-                if isinstance(item, dict)
-            )
-        if not runtime_ok:
-            problems.append("sqlite3 runtime is not installed in Piston")
+            ):
+                problems.append("sqlite3 runtime is not installed in Piston")
+        else:
+            problems.append(f"Piston runtimes returned HTTP {response.status_code}")
     except Exception as exc:
         problems.append(f"piston unreachable: {exc}")
 
@@ -695,16 +643,45 @@ async def ready():
     )
 
 
+class ExecuteRequest(BaseModel):
+    # State is the SQL dump from the browser's sessionStorage. Empty string means
+    # a fresh session (browser will pass the pre-seeded dataset SQL on first run).
+    state: str = Field(default="", max_length=4_000_000)
+    query: str = Field(min_length=1, max_length=100_000)
+
+
+@app.post("/api/execute")
+async def execute_query(req: ExecuteRequest):
+    """Run a query against the caller-supplied database state."""
+    query = req.query.strip()
+    if not query:
+        return JSONResponse(status_code=400, content={"error": "Empty query."})
+
+    reason = check_query_safety(query)
+    if reason:
+        return JSONResponse(status_code=400, content={"error": reason})
+
+    state = req.state or ""
+    if len(state.encode("utf-8")) > MAX_STATE_BYTES:
+        return JSONResponse(
+            status_code=413,
+            content={"error": "Database state is too large. Reset to start fresh."},
+        )
+
+    return await _run_query(state, query)
+
+
 @app.post("/api/upload")
 async def upload_dataset(
     file: UploadFile = File(...),
-    session_id: str = Form(...),
     table_name: str = Form(default=""),
 ):
-    """Load a .csv or .sql file as the session's starting database state."""
-    if not valid_session_id(session_id):
-        return JSONResponse(status_code=400, content={"error": "Invalid session id"})
+    """
+    Convert an uploaded .csv or .sql file to seed SQL and return it.
 
+    The seed SQL is returned to the browser, which stores it in sessionStorage.
+    Nothing is written server-side — the endpoint is a pure conversion function.
+    """
     raw = await file.read()
     if len(raw) > MAX_UPLOAD_BYTES:
         return JSONResponse(
@@ -712,21 +689,12 @@ async def upload_dataset(
             content={"error": f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB."},
         )
 
-    content = raw.decode("utf-8-sig", errors="replace")
+    content  = raw.decode("utf-8-sig", errors="replace")
     filename = file.filename or ""
-
-    if LOG_PISTON_PAYLOAD:
-        logger.info(
-            ">>> POST /api/upload  filename=%s  bytes=%d  table=%r\n%s",
-            filename or "(none)",
-            len(raw),
-            table_name,
-            content[:LOG_PISTON_PAYLOAD_MAX],
-        )
 
     try:
         if filename.lower().endswith(".csv"):
-            name = sanitize_identifier(
+            name     = sanitize_identifier(
                 table_name.strip() or filename.rsplit(".", 1)[0], fallback="dataset"
             )
             seed_sql = csv_to_sql(name, content)
@@ -742,216 +710,14 @@ async def upload_dataset(
     except csv.Error as exc:
         return JSONResponse(status_code=400, content={"error": f"Malformed CSV: {exc}"})
 
-    if len(seed_sql.encode("utf-8")) > MAX_SEED_BYTES:
+    if len(seed_sql.encode("utf-8")) > MAX_STATE_BYTES:
         return JSONResponse(
             status_code=413,
-            content={"error": "That dataset is too large to keep in a browser session."},
-        )
-
-    try:
-        async with session_guard(session_id, timeout=SESSION_LOCK_TIMEOUT):
-            await write_state(session_id, seed_sql)
-    except SessionBusy:
-        return JSONResponse(
-            status_code=429,
-            content={"error": "Another query is running for this session. Try again."},
+            content={"error": "That dataset is too large (max 4 MB as SQL)."},
         )
 
     return {
-        "ok": True,
-        "schema": extract_schema(seed_sql),
-        "session_id": session_id,
+        "ok":       True,
+        "seed_sql": seed_sql,
+        "schema":   extract_schema(seed_sql),
     }
-
-
-@app.get("/api/schema/{session_id}")
-async def get_schema(session_id: str):
-    if not valid_session_id(session_id):
-        return JSONResponse(status_code=400, content={"error": "Invalid session id"})
-    state = await read_state(session_id)
-    return {"schema": extract_schema(state) if state else []}
-
-
-class ExecuteRequest(BaseModel):
-    session_id: str = Field(min_length=1, max_length=64)
-    query: str = Field(min_length=1, max_length=100_000)
-
-
-def _limit_result_sets(
-    sets: list[dict[str, Any]]
-) -> tuple[list[dict[str, Any]], bool]:
-    """
-    Bound what gets handed back to the browser.
-
-    A student can put any number of statements into one script, so without a
-    ceiling a single run could return hundreds of thousands of cells - which
-    this process has to serialise and the browser then has to lay out.
-    """
-    trimmed = False
-    if len(sets) > MAX_RESULT_SETS:
-        sets = sets[:MAX_RESULT_SETS]
-        trimmed = True
-
-    budget = MAX_TOTAL_RESULT_ROWS
-    output: list[dict[str, Any]] = []
-    for result in sets:
-        if budget <= 0:
-            trimmed = True
-            break
-        rows = result["rows"]
-        cap = min(MAX_RESULT_ROWS, budget)
-        if len(rows) > cap:
-            rows = rows[:cap]
-            trimmed = True
-        budget -= len(rows)
-        output.append({"columns": result["columns"], "rows": rows})
-    return output, trimmed
-
-
-async def _run_query(session_id: str, query: str) -> JSONResponse:
-    """Execute one query against a session and persist the resulting state."""
-    seed_sql = await read_state(session_id)
-    if len(seed_sql.encode("utf-8")) > MAX_SEED_BYTES:
-        return JSONResponse(
-            status_code=413,
-            content={
-                "error": "This session's stored data has grown too large to re-run. "
-                "Upload a smaller dataset or reset the session."
-            },
-        )
-
-    nonce = secrets.token_hex(8)
-    markers = build_script(seed_sql, query, nonce)
-
-    try:
-        run = await execute_on_piston(markers["script"])
-    except PistonUnavailable as exc:
-        return JSONResponse(status_code=503, content={"error": str(exc)})
-
-    stdout = run.get("stdout", "") or ""
-    stderr = run.get("stderr", "") or ""
-    exit_code = run.get("code", 0)
-
-    results_text, new_state = parse_piston_stdout(stdout, markers)
-
-    # A missing closing sentinel means the engine truncated its output. We must
-    # not persist a partial dump, or the session would be corrupted.
-    state_captured = new_state is not None
-    if state_captured:
-        await write_state(session_id, new_state)
-    else:
-        logger.warning("State capture failed for session %s", session_id)
-
-    result_sets, rows_trimmed = _limit_result_sets(parse_result_sets(results_text))
-    raw = render_sets_as_text(result_sets)
-    error_text = stderr.strip()
-
-    # Piston reports its own limit breaches via `status`, which is far more
-    # precise than inferring them from stdout. Relevant codes:
-    #   OL stdout too large, EL stderr too large, TO timeout, SG signalled.
-    engine_status = run.get("status")
-    engine_message = run.get("message")
-
-    if engine_status == "OL":
-        error_text = (
-            "The result was too large for the execution engine to return. "
-            "Try adding a LIMIT clause, or select fewer columns."
-        )
-    elif engine_status == "EL":
-        error_text = "The query produced too much error output to return."
-    elif engine_status == "TO":
-        error_text = "The query was stopped because it exceeded the time limit."
-    elif engine_status == "SG":
-        error_text = (
-            f"The query was killed by the engine{': ' + engine_message if engine_message else ''}. "
-            "It may have used too much memory."
-        )
-    elif engine_status == "XX":
-        error_text = f"The execution engine hit an internal error{': ' + engine_message if engine_message else ''}."
-
-    warning = ""
-    if not state_captured:
-        warning = (
-            "The execution engine truncated its output, so this run's changes "
-            "were not saved. Raise PISTON_OUTPUT_MAX_SIZE or use a smaller dataset."
-        )
-    if rows_trimmed:
-        warning = (warning + " " if warning else "") + (
-            f"Results were trimmed (at most {MAX_RESULT_ROWS} rows per statement, "
-            f"{MAX_TOTAL_RESULT_ROWS} rows and {MAX_RESULT_SETS} statements per run)."
-        )
-
-    return JSONResponse(
-        content={
-            "ok": exit_code == 0 and not error_text,
-            "output": raw,
-            "parsed": {"sets": result_sets, "raw": raw},
-            "error": error_text,
-            "warning": warning,
-            "schema": extract_schema(
-                new_state if new_state is not None else seed_sql
-            ),
-        }
-    )
-
-
-@app.post("/api/execute")
-async def execute_query(req: ExecuteRequest):
-    """Run a query against the session's database and persist the new state."""
-    if not valid_session_id(req.session_id):
-        return JSONResponse(status_code=400, content={"error": "Invalid session id"})
-
-    query = req.query.strip()
-    if not query:
-        return JSONResponse(status_code=400, content={"error": "Empty query."})
-
-    reason = check_query_safety(query)
-    if reason:
-        return JSONResponse(status_code=400, content={"error": reason})
-
-    if LOG_PISTON_PAYLOAD:
-        body = json.dumps({"session_id": req.session_id, "query": query})
-        logger.info(
-            ">>> POST /api/execute  body=%d bytes\n%s",
-            len(body),
-            body[:LOG_PISTON_PAYLOAD_MAX],
-        )
-
-    # The read -> execute -> write cycle has to be atomic per session, otherwise
-    # two concurrent runs both read the same seed and the slower one overwrites
-    # the other's committed changes.
-    try:
-        async with session_guard(req.session_id, timeout=SESSION_LOCK_TIMEOUT):
-            return await _run_query(req.session_id, query)
-    except SessionBusy:
-        return JSONResponse(
-            status_code=429,
-            content={"error": "Another query is already running for this session."},
-        )
-
-
-@app.post("/api/reset/{session_id}")
-async def reset_session(session_id: str):
-    """Clear a session's stored database."""
-    if not valid_session_id(session_id):
-        return JSONResponse(status_code=400, content={"error": "Invalid session id"})
-    # Take the guard so an in-flight query cannot write the old state back
-    # after the delete, which would silently resurrect the session.
-    try:
-        async with session_guard(session_id, timeout=SESSION_LOCK_TIMEOUT):
-            await redis_client.delete(state_key(session_id))
-    except SessionBusy:
-        return JSONResponse(
-            status_code=429,
-            content={"error": "A query is still running for this session. Try again."},
-        )
-    return {"ok": True}
-
-
-@app.post("/api/extend/{session_id}")
-async def extend_session(session_id: str):
-    """Refresh a session's TTL."""
-    if not valid_session_id(session_id):
-        return JSONResponse(status_code=400, content={"error": "Invalid session id"})
-    await redis_client.expire(state_key(session_id), SESSION_TTL)
-    return {"ok": True}
