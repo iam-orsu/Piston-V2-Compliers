@@ -162,7 +162,6 @@ def check_query_safety(sql: str) -> Optional[str]:
 
 
 def infer_column_type(values: list[str]) -> str:
-    saw_value = all_int = all_numeric = True
     saw_value = False
     all_int = True
     all_numeric = True

@@ -1762,7 +1762,6 @@ async function doSqlUpload() {
     const tname = document.getElementById('sql-table-name').value.trim();
     const fd    = new FormData();
     fd.append('file', file);
-    fd.append('session_id', getSqlSession());
     if (tname) fd.append('table_name', tname);
 
     btn.disabled = true;
