@@ -1599,7 +1599,12 @@ function showSqlError(msg, warning) {
 
 // ── Upload modal ───────────────────────────────────────────────────────────
 
+// Track files dropped via drag-and-drop separately because HTMLInputElement.files
+// is read-only — assigning to it is silently ignored in most browsers.
+let sqlDroppedFile = null;
+
 function openSqlModal() {
+    sqlDroppedFile = null;
     document.getElementById('sql-modal-overlay').style.display = 'flex';
     document.getElementById('sql-modal-err').textContent = '';
     document.getElementById('sql-file-input').value = '';
@@ -1620,12 +1625,14 @@ async function doSqlUpload() {
     const errEl     = document.getElementById('sql-modal-err');
     const btn       = document.getElementById('sql-upload-confirm-btn');
 
-    if (!fileInput.files || !fileInput.files[0]) {
+    // Prefer a drag-dropped file; fall back to the file-picker selection.
+    const file = sqlDroppedFile || (fileInput.files && fileInput.files[0]);
+
+    if (!file) {
         errEl.textContent = 'Please select a file first.';
         return;
     }
 
-    const file  = fileInput.files[0];
     const tname = document.getElementById('sql-table-name').value.trim();
     const fd    = new FormData();
     fd.append('file', file);
@@ -1725,7 +1732,7 @@ dropZone.addEventListener('drop', (e) => {
     dropZone.classList.remove('drag-over');
     const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (f) {
-        document.getElementById('sql-file-input').files = e.dataTransfer.files;
+        sqlDroppedFile = f;
         document.getElementById('sql-chosen-file').textContent = f.name;
     }
 });

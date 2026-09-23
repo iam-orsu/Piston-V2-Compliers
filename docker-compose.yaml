@@ -76,6 +76,10 @@ services:
       - PISTON_RUN_TIMEOUT=30000             # 30s — time for students to type input
       - PISTON_COMPILE_TIMEOUT=30000         # 30s compile timeout
       - PISTON_MAX_PROCESS_COUNT=256         # JVM (Scala/Java) needs many GC threads
+      # SQL Studio: sqlite3 .dump output can exceed the 64 KB default for any real
+      # dataset. Truncated output means state capture fails silently → INSERTs don't
+      # persist. 4 MB matches sql-backend's MAX_SEED_BYTES ceiling.
+      - PISTON_OUTPUT_MAX_SIZE=4194304
 
     depends_on:
       host-init:
@@ -122,6 +126,7 @@ services:
       - PISTON_RUN_TIMEOUT=30000
       - PISTON_COMPILE_TIMEOUT=30000
       - PISTON_MAX_PROCESS_COUNT=256
+      - PISTON_OUTPUT_MAX_SIZE=4194304
     depends_on:
       host-init:
         condition: service_completed_successfully
@@ -166,6 +171,7 @@ services:
       - PISTON_RUN_TIMEOUT=30000
       - PISTON_COMPILE_TIMEOUT=30000
       - PISTON_MAX_PROCESS_COUNT=256
+      - PISTON_OUTPUT_MAX_SIZE=4194304
     depends_on:
       host-init:
         condition: service_completed_successfully
@@ -205,8 +211,10 @@ services:
     container_name: piston_sql_backend
     restart: unless-stopped
     environment:
-      # Routes through the existing nginx → api1/api2/api3 load balancer
-      - PISTON_URL=http://nginx:2000
+      # Port 2001 is the internal nginx listener with NO rate limiting — all
+      # sql-backend requests share one container IP so port 2000's burst=60 bucket
+      # would 429-reject every student query past the 60th simultaneous request.
+      - PISTON_URL=http://nginx:2001
       - REDIS_URL=redis://redis:6379
       - SESSION_TTL=3600          # 1 h — session state auto-expires
       - MAX_SEED_BYTES=4194304    # 4 MB max stored state per session
@@ -244,8 +252,6 @@ services:
       api2:
         condition: service_healthy
       api3:
-        condition: service_healthy
-      sql-backend:
         condition: service_healthy
     networks:
       - piston_net
