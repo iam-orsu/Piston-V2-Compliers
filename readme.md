@@ -280,6 +280,139 @@ Host your frontend anywhere (Vercel, Netlify, your own server) and point your AP
 
 ---
 
+## SQL Studio — Developer Guide
+
+The built-in SQL Studio tab lets students write and run SQLite queries directly in the browser. It is fully stateless — no data is ever written to the server.
+
+### How it works
+
+1. The browser holds the entire database as a SQL string in `sessionStorage`.
+2. On every query, the browser sends `{ state, query }` to `/sql-api/execute`.
+3. The backend passes the state + query to Piston's `sqlite3` runtime, captures the `.dump` output, and returns `{ new_state, results }`.
+4. The browser stores `new_state` back into `sessionStorage` for the next query.
+5. On page refresh, `sessionStorage` is cleared — students always start fresh.
+
+Nothing is stored on the server. The VPS is never written to.
+
+### Pre-seeded dataset
+
+By default SQL Studio loads a 60-row `sales` table (9 columns: `order_id`, `order_date`, `region`, `sales_rep`, `product`, `category`, `quantity`, `unit_price`, `discount`). The data is hardcoded as a JavaScript constant in `frontend/index.html` and sent as the initial state on the very first query.
+
+### Changing the pre-seeded data
+
+To swap in your own dataset:
+
+**Step 1 — Generate the seed SQL**
+
+If you have a CSV, the easiest way is to load it into SQLite locally and dump it:
+
+```bash
+sqlite3 mydb.db
+.mode csv
+.import mydata.csv my_table
+.dump
+.quit
+```
+
+Copy the output — it will look like:
+
+```sql
+CREATE TABLE "my_table" ("col1" TEXT, "col2" INTEGER, ...);
+INSERT INTO "my_table" VALUES('value1', 42, ...);
+...
+```
+
+**Step 2 — Replace the constants in `frontend/index.html`**
+
+Find the two constants near the top of the SQL Studio section (search for `SALES_SEED_SQL`):
+
+```javascript
+const SALES_SEED_SQL = `...`;        // ← replace with your CREATE TABLE + INSERTs
+const SALES_SEED_SCHEMA = [...];     // ← replace with your table/column metadata
+```
+
+`SALES_SEED_SQL` is a plain template literal — paste your SQL dump directly into it.
+
+`SALES_SEED_SCHEMA` drives the schema panel on the left. Its shape is:
+
+```javascript
+const SALES_SEED_SCHEMA = [
+  {
+    name: 'my_table',
+    columns: [
+      { name: 'col1', type: 'TEXT' },
+      { name: 'col2', type: 'INTEGER' },
+    ]
+  }
+];
+```
+
+Add one object per table. `type` is display-only — it can be any string.
+
+**Step 3 — Update the default editor text (optional)**
+
+Search for `-- SQL Studio  |  Pre-loaded:` in `frontend/index.html` and update the comment to reflect your new table name.
+
+**Step 4 — Redeploy**
+
+```bash
+./deploy.sh restart
+```
+
+nginx serves `frontend/index.html` directly from the bind-mount — no image rebuild needed.
+
+### SQL Studio API endpoints
+
+These are served at `/sql-api/` on both port 80 and port 2000.
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `POST` | `/sql-api/execute` | Run a query against the supplied state |
+| `POST` | `/sql-api/upload` | Parse a CSV/SQL file into seed SQL |
+| `GET` | `/sql-api/health` | Health check |
+
+**Execute request:**
+```json
+{
+  "state": "<sqlite3 .dump output from the previous response, or empty string>",
+  "query": "SELECT * FROM sales LIMIT 10;"
+}
+```
+
+**Execute response:**
+```json
+{
+  "ok": true,
+  "new_state": "<updated sqlite3 .dump — store this and send it back next request>",
+  "parsed": {
+    "sets": [
+      {
+        "columns": ["order_id", "order_date", "region"],
+        "rows": [[1001, "2024-01-08", "North"], [1002, "2024-01-15", "South"]]
+      }
+    ],
+    "raw": "order_id | order_date | region\n..."
+  },
+  "schema": [{ "name": "sales", "columns": [{ "name": "order_id", "type": "INTEGER" }] }],
+  "error": null,
+  "warning": null
+}
+```
+
+On the very first request, send `"state": ""` — the backend will use the empty string and your `SALES_SEED_SQL` will be sent as the state by the browser on the first real query.
+
+### Forbidden SQL
+
+The following are blocked server-side to prevent sandbox escape:
+
+- SQLite dot-commands (`.read`, `.load`, etc.)
+- `ATTACH DATABASE` / `DETACH DATABASE`
+- `readfile()` / `writefile()` / `load_extension()`
+
+Regular DML and DDL (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `DROP`, `ALTER`) are all permitted. Piston's sandbox provides the actual isolation.
+
+---
+
 ## Supported Languages
 
 Python, JavaScript (Node), TypeScript, Java, C, C++, C#, Go, Rust, Ruby, PHP, Kotlin, Swift, Scala, Haskell, Lua, Perl, R, Bash, Dart, Julia, Elixir, Erlang, OCaml, Pascal, Nim, SQLite, Brainfuck, NASM, Zig, V, CoffeeScript, Crystal, Clojure, Groovy, Lisp, Prolog, COBOL, Fortran, and more.

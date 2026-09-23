@@ -1574,6 +1574,18 @@ async function sqlRunQuery() {
             body:    JSON.stringify({ state: currentState, query }),
             signal:  sqlAbortCtrl.signal,
         });
+
+        if (!res.ok) {
+            let errMsg = `Server error (${res.status})`;
+            if (res.status === 429) errMsg = 'Too many queries — please wait a moment and try again.';
+            else if (res.status === 413) errMsg = 'Your query or database state is too large to send.';
+            else if (res.status === 503) errMsg = 'SQL backend unavailable — please retry in a moment.';
+            else { try { const j = await res.json(); errMsg = j.detail || j.error || errMsg; } catch(_) {} }
+            showSqlError(errMsg, '');
+            setStatus('SQL Studio', `Error (${res.status})`, 'error');
+            return;
+        }
+
         const data = await res.json();
 
         // Persist the updated database state in sessionStorage for the next query.
@@ -1582,7 +1594,8 @@ async function sqlRunQuery() {
             setSqlState(data.new_state);
         }
 
-        if (data.schema && data.schema.length > 0) {
+        // Always sync schema panel — includes the empty-array case after DROP TABLE.
+        if (data.schema !== undefined) {
             sqlSchema = data.schema;
             renderSqlSchema(sqlSchema);
         }
@@ -1770,6 +1783,14 @@ async function doSqlUpload() {
 
     try {
         const res  = await fetch('/sql-api/upload', { method: 'POST', body: fd });
+        if (!res.ok) {
+            let errMsg = `Upload failed (${res.status})`;
+            if (res.status === 413) errMsg = 'File is too large — maximum 8 MB.';
+            else if (res.status === 429) errMsg = 'Too many requests — please wait and try again.';
+            else { try { const j = await res.json(); errMsg = j.detail || j.error || errMsg; } catch(_) {} }
+            errEl.textContent = errMsg;
+            return;
+        }
         const data = await res.json();
         if (data.ok) {
             // Backend returns the seed SQL; store it in sessionStorage so
