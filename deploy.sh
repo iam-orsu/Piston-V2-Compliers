@@ -309,19 +309,17 @@ patch_runtimes() {
     if [[ -n "$java_pkg" ]]; then
         step "Patching java runtime at ${java_pkg}"
 
-        local tmp_compile tmp_run
-        tmp_compile=$(mktemp)
-        tmp_run=$(mktemp)
-
-        printf '#!/usr/bin/env bash\njavac "$@"\n' > "$tmp_compile"
-        printf '#!/usr/bin/env bash\nclassname="${1%%.java}"\nshift\njava "$classname" "$@"\n' > "$tmp_run"
-
-        docker cp "$tmp_compile" "piston_api1:${java_pkg}/compile"
-        docker cp "$tmp_run"     "piston_api1:${java_pkg}/run"
+        # Copy the vetted scripts directly from the repo — no quoting issues
+        docker cp "$SCRIPT_DIR/packages/java/15.0.2/compile" "piston_api1:${java_pkg}/compile"
+        docker cp "$SCRIPT_DIR/packages/java/15.0.2/run"     "piston_api1:${java_pkg}/run"
         docker exec piston_api1 chmod +x "${java_pkg}/compile" "${java_pkg}/run"
 
-        rm -f "$tmp_compile" "$tmp_run"
-        step "Java runtime patched."
+        # Verify
+        if docker exec piston_api1 test -f "${java_pkg}/compile"; then
+            step "Java runtime patched successfully."
+        else
+            warn "Java compile script was not written — check docker cp permissions"
+        fi
     else
         warn "Java package not found in volume — skipping patch (install java first)"
     fi
