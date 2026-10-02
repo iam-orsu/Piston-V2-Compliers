@@ -318,12 +318,167 @@
         .sb-sep  { width: 1px; height: 12px; background: rgba(255,255,255,0.25); }
         .sb-spacer { flex: 1; }
 
+        /* ── File Explorer ────────────────────────────────────────────────────── */
+        .file-explorer {
+            width: 220px;
+            min-width: 220px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-1);
+            border-right: 1px solid var(--border);
+            transition: width 0.18s ease, min-width 0.18s ease;
+            overflow: hidden;
+        }
+        .file-explorer.collapsed {
+            width: 32px;
+            min-width: 32px;
+        }
+        .fe-header {
+            height: 36px;
+            padding: 0 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .fe-title {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        .fe-collapse-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 3px;
+            line-height: 1;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.18s ease, color 0.1s;
+        }
+        .fe-collapse-btn:hover { color: var(--text); background: var(--bg-2); }
+        .file-explorer.collapsed .fe-title { display: none; }
+        .file-explorer.collapsed .fe-header { justify-content: center; padding: 0; }
+        .fe-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+        .fe-empty {
+            padding: 24px 12px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 11px;
+            line-height: 1.9;
+        }
+        .fe-empty-icon { font-size: 24px; display: block; margin-bottom: 8px; opacity: 0.45; }
+        .file-explorer.collapsed .fe-empty { display: none; }
+        .fe-section-header {
+            padding: 6px 10px 4px;
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .fe-clear-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 11px;
+            cursor: pointer;
+            padding: 1px 5px;
+            border-radius: 3px;
+        }
+        .fe-clear-btn:hover { color: var(--red); background: rgba(248,81,73,0.1); }
+        .fe-file { display: flex; flex-direction: column; border-bottom: 1px solid rgba(48,54,61,0.5); }
+        .fe-file-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 10px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.1s;
+        }
+        .fe-file-row:hover { background: var(--bg-2); }
+        .fe-file-row.active { background: rgba(88,166,255,0.1); }
+        .fe-file-icon { font-size: 13px; flex-shrink: 0; }
+        .fe-file-name {
+            flex: 1;
+            font-size: 12px;
+            font-family: var(--mono);
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
+        }
+        .fe-file-size { font-size: 10px; color: var(--text-muted); flex-shrink: 0; white-space: nowrap; }
+        .fe-file-actions { display: flex; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity 0.1s; }
+        .fe-file-row:hover .fe-file-actions,
+        .fe-file-row.active .fe-file-actions { opacity: 1; }
+        .fe-dl-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 11px;
+            line-height: 1;
+        }
+        .fe-dl-btn:hover { color: var(--accent); }
+        .fe-preview {
+            background: var(--bg-0);
+            border-top: 1px solid var(--border);
+            overflow: hidden;
+            max-height: 0;
+            transition: max-height 0.2s ease;
+        }
+        .fe-preview.open { max-height: 200px; }
+        .fe-preview-content {
+            padding: 8px 10px;
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--text-dim);
+            white-space: pre;
+            overflow: auto;
+            max-height: 200px;
+            line-height: 1.5;
+        }
+        .fe-preview-binary {
+            padding: 12px 10px;
+            font-size: 11px;
+            color: var(--text-muted);
+            font-style: italic;
+            line-height: 1.7;
+        }
+        /* Hide text content when explorer is collapsed */
+        .file-explorer.collapsed .fe-file-name,
+        .file-explorer.collapsed .fe-file-size,
+        .file-explorer.collapsed .fe-file-actions,
+        .file-explorer.collapsed .fe-section-header,
+        .file-explorer.collapsed .fe-preview { display: none; }
+        .file-explorer.collapsed .fe-file-row { justify-content: center; padding: 7px 0; }
+
         /* Responsive */
         @media (max-width: 700px) {
             .main { flex-direction: column; }
             .editor-panel { flex: 1; border-right: none; border-bottom: 1px solid var(--border); }
             .terminal-panel { flex: 1; }
             .logo span { display: none; }
+            .file-explorer { display: none; }
         }
 
         /* ── Mode Toggle (IDE ↔ SQL Studio) ─────────────────────────────────── */
@@ -697,6 +852,24 @@
 
 <!-- Main Split (IDE mode) -->
 <div class="main" id="ide-main">
+
+    <!-- File Explorer Panel -->
+    <div class="file-explorer" id="file-explorer">
+        <div class="fe-header">
+            <span class="fe-title">Explorer</span>
+            <button class="fe-collapse-btn" id="fe-collapse-btn" title="Toggle explorer">
+                <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
+                </svg>
+            </button>
+        </div>
+        <div class="fe-body" id="fe-body">
+            <div class="fe-empty" id="fe-empty">
+                <span class="fe-empty-icon">📁</span>
+                Run code that creates files<br>to see them here
+            </div>
+        </div>
+    </div>
 
     <!-- Editor Panel -->
     <div class="editor-panel">
@@ -1133,6 +1306,7 @@ async function runCode() {
 
     setRunning(true);
     termClear();
+    clearFileExplorer();
     showTab('terminal');
     term.focus();
 
@@ -1189,6 +1363,12 @@ async function runCode() {
                 case 'exit':
                     if (msg.stage === 'compile') compileStats = msg;
                     if (msg.stage === 'run')     runStats     = msg;
+                    break;
+
+                case 'output_files':
+                    if (msg.files && msg.files.length > 0) {
+                        renderFileExplorer(msg.files);
+                    }
                     break;
             }
         };
@@ -1841,6 +2021,144 @@ function escHtml(s) {
         .replace(/>/g,'&gt;')
         .replace(/"/g,'&quot;');
 }
+
+// ── File Explorer ──────────────────────────────────────────────────────────
+
+let feFiles     = [];
+let feActiveIdx = -1;
+let feCollapsed = false;
+
+const FE_ICONS = {
+    py:'🐍', js:'📜', ts:'📜', java:'☕', c:'⚙️', cpp:'⚙️', cc:'⚙️',
+    cs:'⚙️', go:'🔵', rs:'🦀', rb:'💎', php:'🐘', kt:'⚙️', swift:'⚙️',
+    txt:'📄', md:'📝', log:'📋', csv:'📊', json:'📋',
+    xml:'📋', yaml:'📋', yml:'📋', html:'🌐', css:'🎨',
+    png:'🖼️', jpg:'🖼️', jpeg:'🖼️', gif:'🖼️', svg:'🖼️', bmp:'🖼️',
+    pdf:'📕', zip:'📦', tar:'📦', gz:'📦',
+    sh:'⚙️', out:'⚙️',
+};
+
+function feIcon(name) {
+    const ext = name.split('.').pop().toLowerCase();
+    return FE_ICONS[ext] || '📄';
+}
+
+function feFormatSize(bytes) {
+    if (bytes < 1024)             return `${bytes} B`;
+    if (bytes < 1024 * 1024)      return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderFileExplorer(files) {
+    feFiles     = files;
+    feActiveIdx = -1;
+
+    const body = document.getElementById('fe-body');
+
+    if (!files || files.length === 0) {
+        body.innerHTML = '<div class="fe-empty" id="fe-empty"><span class="fe-empty-icon">📁</span>Run code that creates files<br>to see them here</div>';
+        return;
+    }
+
+    // Auto-expand the panel if it was collapsed
+    if (feCollapsed) feToggleCollapse();
+
+    const sectionHeader = `
+        <div class="fe-section-header">
+            <span>Created Files (${files.length})</span>
+            <button class="fe-clear-btn" onclick="clearFileExplorer()" title="Clear">✕</button>
+        </div>`;
+
+    const fileItems = files.map((f, i) => {
+        const isBinary = f.encoding === 'base64';
+        const preview  = isBinary
+            ? `<div class="fe-preview-binary">Binary file · ${feFormatSize(f.size)}<br>
+               <small style="color:var(--accent);cursor:pointer" onclick="feDownload(${i})">⬇ Download</small></div>`
+            : `<div class="fe-preview-content">${escHtml(f.content.slice(0, 3000))}${f.content.length > 3000 ? '\n\n… (truncated — download to see full file)' : ''}</div>`;
+
+        return `<div class="fe-file" id="fe-file-${i}">
+            <div class="fe-file-row" id="fe-row-${i}" onclick="feTogglePreview(${i})">
+                <span class="fe-file-icon">${feIcon(f.name)}</span>
+                <span class="fe-file-name" title="${escHtml(f.name)}">${escHtml(f.name)}</span>
+                <span class="fe-file-size">${feFormatSize(f.size)}</span>
+                <span class="fe-file-actions">
+                    <button class="fe-dl-btn" onclick="event.stopPropagation(); feDownload(${i})" title="Download">⬇</button>
+                </span>
+            </div>
+            <div class="fe-preview" id="fe-preview-${i}">${preview}</div>
+        </div>`;
+    }).join('');
+
+    body.innerHTML = sectionHeader + fileItems;
+}
+
+function feTogglePreview(idx) {
+    const row     = document.getElementById(`fe-row-${idx}`);
+    const preview = document.getElementById(`fe-preview-${idx}`);
+    if (!row || !preview) return;
+
+    const isOpen = preview.classList.contains('open');
+
+    // Close the previously open preview
+    if (feActiveIdx !== -1 && feActiveIdx !== idx) {
+        const prevRow     = document.getElementById(`fe-row-${feActiveIdx}`);
+        const prevPreview = document.getElementById(`fe-preview-${feActiveIdx}`);
+        if (prevRow)     prevRow.classList.remove('active');
+        if (prevPreview) prevPreview.classList.remove('open');
+    }
+
+    if (isOpen) {
+        row.classList.remove('active');
+        preview.classList.remove('open');
+        feActiveIdx = -1;
+    } else {
+        row.classList.add('active');
+        preview.classList.add('open');
+        feActiveIdx = idx;
+    }
+}
+
+function feDownload(idx) {
+    const f = feFiles[idx];
+    if (!f) return;
+
+    let blob;
+    if (f.encoding === 'base64') {
+        const bin   = atob(f.content);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        blob = new Blob([bytes], { type: 'application/octet-stream' });
+    } else {
+        blob = new Blob([f.content], { type: 'text/plain;charset=utf-8' });
+    }
+
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href     = url;
+    a.download = f.name.split('/').pop();
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function clearFileExplorer() {
+    feFiles     = [];
+    feActiveIdx = -1;
+    const body = document.getElementById('fe-body');
+    if (!body) return;
+    body.innerHTML = '<div class="fe-empty" id="fe-empty"><span class="fe-empty-icon">📁</span>Run code that creates files<br>to see them here</div>';
+}
+
+function feToggleCollapse() {
+    feCollapsed = !feCollapsed;
+    const panel = document.getElementById('file-explorer');
+    const btn   = document.getElementById('fe-collapse-btn');
+    panel.classList.toggle('collapsed', feCollapsed);
+    btn.style.transform = feCollapsed ? 'rotate(180deg)' : 'rotate(0deg)';
+}
+
+document.getElementById('fe-collapse-btn').addEventListener('click', feToggleCollapse);
 
 // ── SQL event listeners ────────────────────────────────────────────────────
 

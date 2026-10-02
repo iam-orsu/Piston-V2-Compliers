@@ -323,7 +323,16 @@ router.ws('/connect', async (ws, req) => {
                             })
                         );
 
-                        await job.execute(box, event_bus);
+                        const exec_result = await job.execute(box, event_bus);
+
+                        // Send captured output files before the done signal so the
+                        // client can render the file explorer before the job closes.
+                        if (exec_result.output_files && exec_result.output_files.length > 0) {
+                            safe_ws_send(ws, JSON.stringify({
+                                type: 'output_files',
+                                files: exec_result.output_files,
+                            }));
+                        }
                     } catch (error) {
                         logger.error(
                             `Error executing job ${job.uuid}:\n${error}`

@@ -84,8 +84,110 @@ Runs the given code, using the given runtime and arguments, returning the result
 -   `compile.output`: stdout and stderr combined in order of data from compile stage process
 -   `compile.code`: Exit code from compile process, or null if signal is not null
 -   `compile.signal`: Signal from compile process, or null if code is not null
+-   `output_files`: Array of files created by the program during the run stage. Always present; empty array `[]` if no files were written. Capped at 20 files and 5 MB total. Files over 1 MB each are silently skipped. Symlinks are never followed.
+-   `output_files[].name`: Relative path of the file within the job's working directory (e.g. `report.txt`, `data/output.csv`)
+-   `output_files[].content`: File content as a string. Text files (valid UTF-8) are returned as-is. Binary files are base64-encoded.
+-   `output_files[].encoding`: `"utf8"` for text files, `"base64"` for binary files
+-   `output_files[].size`: File size in bytes
 
-#### Example
+#### Output Files — Language Notes
+
+| Language | Compile stage | What `output_files` contains |
+|---|---|---|
+| Python, JavaScript, Node, Ruby, etc. | No | Files your code created with `open()`, `fs.writeFile()`, etc. |
+| C, C++ | Yes | Files created during `main()` — compiled binary is excluded from diff |
+| Java | Yes | Files created at runtime — `.class` files are excluded from diff |
+
+The diff is taken **after compile and before run**, so compiled artifacts (`.class`, `.o`, binaries) never appear in `output_files` regardless of language.
+
+#### Example — File I/O (Python)
+
+```json
+POST /api/v2/execute
+Content-Type: application/json
+
+{
+  "language": "python",
+  "version": "3.12.0",
+  "files": [
+    {
+      "name": "main.py",
+      "content": "with open('hello.txt', 'w') as f:\n    f.write('Hello, World!')\nprint('File written.')"
+    }
+  ]
+}
+```
+
+```json
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "language": "python",
+  "version": "3.12.0",
+  "run": {
+    "stdout": "File written.\n",
+    "stderr": "",
+    "code": 0,
+    "signal": null,
+    "output": "File written.\n"
+  },
+  "output_files": [
+    {
+      "name": "hello.txt",
+      "content": "Hello, World!",
+      "encoding": "utf8",
+      "size": 13
+    }
+  ]
+}
+```
+
+#### Example — No files created (JavaScript)
+
+```json
+POST /api/v2/execute
+Content-Type: application/json
+
+{
+  "language": "javascript",
+  "version": "20.11.1",
+  "files": [{ "name": "main.js", "content": "console.log('hi')" }]
+}
+```
+
+```json
+HTTP/1.1 200 OK
+
+{
+  "language": "javascript",
+  "version": "20.11.1",
+  "run": { "stdout": "hi\n", "stderr": "", "code": 0, "signal": null, "output": "hi\n" },
+  "output_files": []
+}
+```
+
+#### WebSocket — `output_files` message
+
+When using the `/api/v2/connect` WebSocket endpoint, output files are delivered as a separate message **before** the `{ "type": "exit", "stage": "done" }` close message:
+
+```json
+{ "type": "output_files", "files": [ { "name": "report.txt", "content": "...", "encoding": "utf8", "size": 42 } ] }
+```
+
+This message is only sent if at least one file was captured. Listen for it in your `onmessage` handler:
+
+```js
+ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg.type === 'output_files') {
+        // msg.files is the same array as output_files in the HTTP response
+        renderFileExplorer(msg.files);
+    }
+};
+```
+
+#### Example — original JS example (no file I/O)
 
 ```json
 POST /api/v2/execute
@@ -121,6 +223,7 @@ Content-Type: application/json
     "signal": null,
     "output": "[\n  '/piston/packages/node/15.10.0/bin/node',\n  '/piston/jobs/e87afa0d-6c2a-40b8-a824-ffb9c5c6cb64/my_cool_code.js',\n  '1',\n  '2',\n  '3'\n]\n"
   },
+  "output_files": [],
   "language": "javascript",
   "version": "15.10.0"
 }

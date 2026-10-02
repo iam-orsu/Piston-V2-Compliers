@@ -19,6 +19,11 @@ const job_states = {
 const MAX_BOX_ID = Math.max(999, config.max_concurrent_jobs * 4);
 const ISOLATE_PATH = '/usr/local/bin/isolate';
 
+// Limits for output file capture — keeps responses bounded
+const MAX_OUTPUT_FILE_SIZE  = 1 * 1024 * 1024; // 1 MB per file
+const MAX_OUTPUT_FILES      = 20;               // max files returned
+const MAX_TOTAL_OUTPUT_SIZE = 5 * 1024 * 1024; // 5 MB total across all files
+
 // C4: Track in-use box IDs to prevent collision when IDs wrap around
 const used_box_ids = new Set();
 let box_id_counter = 0;
@@ -454,9 +459,18 @@ class Job {
         }
 
         let run;
+        let output_files = [];
         if (!compile_errored) {
             this.logger.debug('Running');
             emit_event_bus_stage('run');
+
+            // Snapshot submission dir before run so we can diff for output files.
+            // For compiled languages box was already swapped to the run box above,
+            // so the snapshot includes the source + compiled artifacts — only files
+            // created by the user's code during run will appear in the diff.
+            const submission_dir   = path.join(box.dir, 'submission');
+            const pre_run_snapshot = await this.#snapshot_dir(submission_dir);
+
             run = await this.safe_call(
                 box,
                 'run',
@@ -467,6 +481,12 @@ class Job {
                 event_bus
             );
             emit_event_bus_result('run', run);
+
+            // Capture files created during run before cleanup destroys the box
+            output_files = await this.#capture_output_files(box, pre_run_snapshot);
+            if (output_files.length > 0) {
+                this.logger.debug(`Captured ${output_files.length} output file(s): ${output_files.map(f => f.name).join(', ')}`);
+            }
         }
 
         this.state = job_states.EXECUTED;
@@ -474,9 +494,86 @@ class Job {
         return {
             compile,
             run,
+            output_files,
             language: this.runtime.language,
             version: this.runtime.version.raw,
         };
+    }
+
+    // Returns a Set of relative paths for every regular file under `dir`.
+    // Uses Dirent to avoid following symlinks — symlinks are skipped entirely.
+    async #snapshot_dir(dir) {
+        const entries = new Set();
+        const walk = async (abs, rel_prefix) => {
+            let items;
+            try {
+                items = await fs.readdir(abs, { withFileTypes: true });
+            } catch (_) {
+                return;
+            }
+            for (const item of items) {
+                if (item.isSymbolicLink()) continue;
+                const rel = rel_prefix + item.name;
+                if (item.isDirectory()) {
+                    await walk(path.join(abs, item.name), rel + '/');
+                } else if (item.isFile()) {
+                    entries.add(rel);
+                }
+            }
+        };
+        await walk(dir, '');
+        return entries;
+    }
+
+    // Reads files that appeared in box/submission after run but were absent in
+    // pre_snapshot. Skips symlinks (via lstat), files over size limits, and
+    // directories. Text files are returned as utf8; binary files as base64.
+    async #capture_output_files(box, pre_snapshot) {
+        const submission_dir = path.join(box.dir, 'submission');
+        const post_snapshot  = await this.#snapshot_dir(submission_dir);
+
+        const output_files = [];
+        let total_bytes    = 0;
+
+        for (const rel of post_snapshot) {
+            if (pre_snapshot.has(rel))           continue;
+            if (output_files.length >= MAX_OUTPUT_FILES) break;
+
+            const abs = path.join(submission_dir, rel);
+            let stat;
+            try {
+                // lstat intentionally — we never follow symlinks
+                stat = await fs.lstat(abs);
+            } catch (_) {
+                continue;
+            }
+
+            if (!stat.isFile())                              continue;
+            if (stat.size > MAX_OUTPUT_FILE_SIZE)            continue;
+            if (total_bytes + stat.size > MAX_TOTAL_OUTPUT_SIZE) break;
+
+            let buf;
+            try {
+                buf = await fs.readFile(abs);
+            } catch (_) {
+                continue;
+            }
+
+            total_bytes += buf.length;
+
+            // Re-encode the decoded string back to bytes; if equal it's valid UTF-8
+            const decoded  = buf.toString('utf8');
+            const is_text  = Buffer.from(decoded, 'utf8').equals(buf);
+
+            output_files.push({
+                name:     rel,
+                content:  is_text ? decoded : buf.toString('base64'),
+                encoding: is_text ? 'utf8' : 'base64',
+                size:     stat.size,
+            });
+        }
+
+        return output_files;
     }
 
     async cleanup() {
