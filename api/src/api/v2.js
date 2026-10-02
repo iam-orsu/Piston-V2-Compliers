@@ -59,6 +59,7 @@ function get_job(body) {
         compile_timeout,
         run_cpu_time,
         compile_cpu_time,
+        workspace_files,
     } = body;
 
     return new Promise((resolve, reject) => {
@@ -146,6 +147,9 @@ function get_job(body) {
                 args: args ?? [],
                 stdin: stdin ?? '',
                 files,
+                workspace_files: Array.isArray(workspace_files)
+                    ? workspace_files.filter(f => typeof f === 'string')
+                    : [],
                 timeouts: {
                     run: run_timeout ?? rt.timeouts.run,
                     compile: compile_timeout ?? rt.timeouts.compile,

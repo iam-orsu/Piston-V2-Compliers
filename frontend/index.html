@@ -439,6 +439,17 @@
             line-height: 1;
         }
         .fe-dl-btn:hover { color: var(--accent); }
+        .fe-del-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 11px;
+            line-height: 1;
+        }
+        .fe-del-btn:hover { color: var(--red); }
         .fe-preview {
             background: var(--bg-0);
             border-top: 1px solid var(--border);
@@ -1276,6 +1287,10 @@ function onLangChange() {
     const sel = document.getElementById('lang-select');
     const lang = sel.value;
     const rt = runtimesByLang[lang];
+
+    // Load this language's workspace regardless of whether editor is ready yet
+    feLoadWorkspace(lang);
+
     if (!rt || !editor) return;
 
     document.getElementById('version-badge').textContent = `v${rt.version}`;
@@ -1286,7 +1301,6 @@ function onLangChange() {
     const ext  = FILE_EXT[lang] || 'txt';
     document.getElementById('filename-label').textContent = `${stem}.${ext}`;
     setStatus(`${lang} ${rt.version}`, 'Ready — Ctrl+Enter to run', 'default');
-
 }
 
 // ── Run via WebSocket ──────────────────────────────────────────────────────
@@ -1306,12 +1320,19 @@ async function runCode() {
 
     setRunning(true);
     termClear();
-    clearFileExplorer();
+    renderFileExplorer();   // reset any open preview; workspace files stay visible
     showTab('terminal');
     term.focus();
 
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl   = `${wsProto}//${location.host}/api/v2/connect`;
+
+    // Snapshot workspace now so the closure captures a stable array.
+    // Filter out any file whose name collides with the code file to avoid
+    // overwriting what the user typed in the editor.
+    const wsFiles = Object.values(feWorkspace)
+        .filter(f => f.name !== fileName)
+        .map(f => ({ name: f.name, content: f.content, encoding: f.encoding }));
 
     let compileStats = null;
     let runStats     = null;
@@ -1327,7 +1348,8 @@ async function runCode() {
                 type: 'init',
                 language: lang,
                 version: rt.version,
-                files: [{ name: fileName, content: code }],
+                files: [{ name: fileName, content: code }, ...wsFiles],
+                workspace_files: wsFiles.map(f => f.name),
                 args: [],
                 stdin: '',
             }));
@@ -1367,7 +1389,7 @@ async function runCode() {
 
                 case 'output_files':
                     if (msg.files && msg.files.length > 0) {
-                        renderFileExplorer(msg.files);
+                        feMergeFiles(msg.files);
                     }
                     break;
             }
@@ -2024,29 +2046,60 @@ function escHtml(s) {
 
 // ── File Explorer ──────────────────────────────────────────────────────────
 
-let feFiles     = [];
-let feActiveIdx = -1;
-let feCollapsed = false;
+let feFiles        = [];    // snapshot of workspace at last render (stable indices for onclick)
+let feActiveIdx    = -1;
+let feCollapsed    = false;
+let feWorkspace    = {};    // { name: fileObj } — persistent per-language map
+let feWorkspaceLang = 'python';
 
-const FE_STORAGE_KEY = 'piston_output_files';
-
-function feSaveToStorage() {
+// Load workspace for the given language from localStorage and re-render.
+function feLoadWorkspace(lang) {
+    feWorkspaceLang = lang;
     try {
-        if (feFiles.length > 0) {
-            localStorage.setItem(FE_STORAGE_KEY, JSON.stringify(feFiles));
+        const raw = localStorage.getItem(`piston_ws_${lang}`);
+        const parsed = raw ? JSON.parse(raw) : {};
+        feWorkspace = (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+            ? parsed : {};
+    } catch (_) {
+        feWorkspace = {};
+    }
+    renderFileExplorer();
+}
+
+// Persist the current workspace to localStorage.
+function feSaveWorkspace() {
+    try {
+        if (Object.keys(feWorkspace).length > 0) {
+            localStorage.setItem(`piston_ws_${feWorkspaceLang}`, JSON.stringify(feWorkspace));
         } else {
-            localStorage.removeItem(FE_STORAGE_KEY);
+            localStorage.removeItem(`piston_ws_${feWorkspaceLang}`);
         }
     } catch (_) {}
 }
 
-function feLoadFromStorage() {
-    try {
-        const raw = localStorage.getItem(FE_STORAGE_KEY);
-        if (!raw) return;
-        const files = JSON.parse(raw);
-        if (Array.isArray(files) && files.length > 0) renderFileExplorer(files);
-    } catch (_) {}
+// Merge output_files returned by the API into the workspace, then re-render.
+function feMergeFiles(outputFiles) {
+    for (const f of outputFiles) {
+        feWorkspace[f.name] = f;
+    }
+    feSaveWorkspace();
+    renderFileExplorer();
+}
+
+// Remove one workspace file by its rendered index, save, and re-render.
+function feDeleteFile(idx) {
+    const f = feFiles[idx];
+    if (!f) return;
+    delete feWorkspace[f.name];
+    feSaveWorkspace();
+    renderFileExplorer();
+}
+
+// Wipe the entire workspace for the current language.
+function feClearWorkspace() {
+    feWorkspace = {};
+    feSaveWorkspace();
+    renderFileExplorer();
 }
 
 const FE_ICONS = {
@@ -2070,13 +2123,13 @@ function feFormatSize(bytes) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function renderFileExplorer(files) {
-    feFiles     = files;
+function renderFileExplorer() {
+    feFiles     = Object.values(feWorkspace);
     feActiveIdx = -1;
 
     const body = document.getElementById('fe-body');
 
-    if (!files || files.length === 0) {
+    if (feFiles.length === 0) {
         body.innerHTML = '<div class="fe-empty" id="fe-empty"><span class="fe-empty-icon">📁</span>Run code that creates files<br>to see them here</div>';
         return;
     }
@@ -2086,11 +2139,11 @@ function renderFileExplorer(files) {
 
     const sectionHeader = `
         <div class="fe-section-header">
-            <span>Created Files (${files.length})</span>
-            <button class="fe-clear-btn" onclick="clearFileExplorer()" title="Clear">✕</button>
+            <span>Workspace (${feFiles.length})</span>
+            <button class="fe-clear-btn" onclick="feClearWorkspace()" title="Clear workspace">✕</button>
         </div>`;
 
-    const fileItems = files.map((f, i) => {
+    const fileItems = feFiles.map((f, i) => {
         const isBinary = f.encoding === 'base64';
         const preview  = isBinary
             ? `<div class="fe-preview-binary">Binary file · ${feFormatSize(f.size)}<br>
@@ -2104,6 +2157,7 @@ function renderFileExplorer(files) {
                 <span class="fe-file-size">${feFormatSize(f.size)}</span>
                 <span class="fe-file-actions">
                     <button class="fe-dl-btn" onclick="event.stopPropagation(); feDownload(${i})" title="Download">⬇</button>
+                    <button class="fe-del-btn" onclick="event.stopPropagation(); feDeleteFile(${i})" title="Remove from workspace">✕</button>
                 </span>
             </div>
             <div class="fe-preview" id="fe-preview-${i}">${preview}</div>
@@ -2111,7 +2165,6 @@ function renderFileExplorer(files) {
     }).join('');
 
     body.innerHTML = sectionHeader + fileItems;
-    feSaveToStorage();
 }
 
 function feTogglePreview(idx) {
@@ -2164,15 +2217,6 @@ function feDownload(idx) {
     URL.revokeObjectURL(url);
 }
 
-function clearFileExplorer() {
-    feFiles     = [];
-    feActiveIdx = -1;
-    const body = document.getElementById('fe-body');
-    if (!body) return;
-    body.innerHTML = '<div class="fe-empty" id="fe-empty"><span class="fe-empty-icon">📁</span>Run code that creates files<br>to see them here</div>';
-    feSaveToStorage();
-}
-
 function feToggleCollapse() {
     feCollapsed = !feCollapsed;
     const panel = document.getElementById('file-explorer');
@@ -2182,8 +2226,6 @@ function feToggleCollapse() {
 }
 
 document.getElementById('fe-collapse-btn').addEventListener('click', feToggleCollapse);
-
-feLoadFromStorage();
 
 // ── SQL event listeners ────────────────────────────────────────────────────
 

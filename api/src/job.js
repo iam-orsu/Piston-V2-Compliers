@@ -74,6 +74,7 @@ class Job {
         timeouts,
         cpu_times,
         memory_limits,
+        workspace_files,
     }) {
         this.uuid = uuidv4();
 
@@ -87,6 +88,13 @@ class Job {
                 ? file.encoding
                 : 'utf8',
         }));
+
+        // Set of filenames the client considers "workspace" files — injected
+        // from a previous run. These are re-captured after run even if they
+        // existed before, so modifications made during the run are returned.
+        this.workspace_files = new Set(
+            Array.isArray(workspace_files) ? workspace_files : []
+        );
 
         this.args = args;
         this.stdin = stdin;
@@ -526,8 +534,10 @@ class Job {
     }
 
     // Reads files that appeared in box/submission after run but were absent in
-    // pre_snapshot. Skips symlinks (via lstat), files over size limits, and
-    // directories. Text files are returned as utf8; binary files as base64.
+    // pre_snapshot, PLUS workspace files that existed before run (so the client
+    // picks up any modifications made during execution).
+    // Skips symlinks (via lstat), files over size limits, and directories.
+    // Text files are returned as utf8; binary files as base64.
     async #capture_output_files(box, pre_snapshot) {
         const submission_dir = path.join(box.dir, 'submission');
         const post_snapshot  = await this.#snapshot_dir(submission_dir);
@@ -536,7 +546,11 @@ class Job {
         let total_bytes    = 0;
 
         for (const rel of post_snapshot) {
-            if (pre_snapshot.has(rel))           continue;
+            const is_new       = !pre_snapshot.has(rel);
+            const is_workspace = this.workspace_files.has(rel);
+            // Capture new files always; re-capture workspace files so the client
+            // gets the post-run version even if the file was modified in place.
+            if (!is_new && !is_workspace)        continue;
             if (output_files.length >= MAX_OUTPUT_FILES) break;
 
             const abs = path.join(submission_dir, rel);
