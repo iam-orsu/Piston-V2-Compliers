@@ -1384,7 +1384,7 @@ async function runCode() {
     const fileName = (rawName &&
                       !rawName.includes('\\') &&
                       !rawName.startsWith('/') &&
-                      !_fnParts.some(s => s === '..' || s === '') &&
+                      !_fnParts.some(s => s === '..' || s === '.' || s === '') &&
                       _fnParts[_fnParts.length - 1].includes('.'))
         ? rawName
         : `${defaultStem}.${defaultExt}`;
@@ -2370,7 +2370,7 @@ function saveToWorkspace() {
     const fileName = (rawName &&
                       !rawName.includes('\\') &&
                       !rawName.startsWith('/') &&
-                      !_swParts.some(s => s === '..' || s === '') &&
+                      !_swParts.some(s => s === '..' || s === '.' || s === '') &&
                       _swParts[_swParts.length - 1].includes('.'))
         ? rawName
         : `${defaultStem}.${defaultExt}`;

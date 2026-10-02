@@ -99,7 +99,7 @@ class Job {
                 .filter(f => {
                     if (typeof f !== 'string') return false;
                     const norm = path.normalize(f).replace(/\\/g, '/');
-                    return !norm.startsWith('..') && !path.isAbsolute(norm);
+                    return !norm.startsWith('..') && !path.isAbsolute(norm) && norm !== '.';
                 })
         );
 
