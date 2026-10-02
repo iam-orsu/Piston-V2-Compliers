@@ -297,34 +297,30 @@ patch_runtimes() {
     echo ""
     echo -e "${CYAN}${BOLD}🔧  Patching language runtimes...${NC}"
 
-    # ── Java 15.0.2 ──────────────────────────────────────────────────────────
+    # ── Java ─────────────────────────────────────────────────────────────────
     # The registry run script uses the Java source launcher (java File.java),
     # which recompiles a single file and cannot resolve multi-file workspace
-    # classes. We replace it with a proper compile + run split:
-    #   compile: javac "$@"   — compiles all passed .java files to .class
-    #   run:     java Main    — executes the already-compiled class
+    # classes. We replace it with a proper compile + run split using docker cp
+    # to avoid shell-quoting issues with heredocs inside docker exec.
     local java_pkg
     java_pkg=$(docker exec piston_api1 \
         find /piston/packages/java -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -1)
 
     if [[ -n "$java_pkg" ]]; then
-        step "Patching java run + compile scripts in ${java_pkg}"
+        step "Patching java runtime at ${java_pkg}"
 
-        docker exec piston_api1 bash -c "
-cat > '${java_pkg}/compile' << 'SCRIPT'
-#!/usr/bin/env bash
-javac \"\$@\"
-SCRIPT
-chmod +x '${java_pkg}/compile'
+        local tmp_compile tmp_run
+        tmp_compile=$(mktemp)
+        tmp_run=$(mktemp)
 
-cat > '${java_pkg}/run' << 'SCRIPT'
-#!/usr/bin/env bash
-classname=\"\${1%.java}\"
-shift
-java \"\$classname\" \"\$@\"
-SCRIPT
-chmod +x '${java_pkg}/run'
-"
+        printf '#!/usr/bin/env bash\njavac "$@"\n' > "$tmp_compile"
+        printf '#!/usr/bin/env bash\nclassname="${1%%.java}"\nshift\njava "$classname" "$@"\n' > "$tmp_run"
+
+        docker cp "$tmp_compile" "piston_api1:${java_pkg}/compile"
+        docker cp "$tmp_run"     "piston_api1:${java_pkg}/run"
+        docker exec piston_api1 chmod +x "${java_pkg}/compile" "${java_pkg}/run"
+
+        rm -f "$tmp_compile" "$tmp_run"
         step "Java runtime patched."
     else
         warn "Java package not found in volume — skipping patch (install java first)"
