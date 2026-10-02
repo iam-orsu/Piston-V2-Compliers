@@ -242,6 +242,90 @@ Output: `Area: 78.54`
 
 ---
 
+## Folder / Directory Support
+
+Files can live in subdirectories. Use forward-slash paths in `files[].name` and `workspace_files[]` — Piston creates the directory structure automatically inside the sandbox.
+
+```
+files[].name: "src/Main.java"   →   sandbox: /box/submission/src/Main.java
+files[].name: "utils/helpers.py" →  sandbox: /box/submission/utils/helpers.py
+```
+
+### Rules
+
+| Allowed | Blocked |
+|---|---|
+| `src/Main.java` | `../etc/passwd` (traversal) |
+| `com/example/App.java` | `/absolute/path.txt` (absolute) |
+| `utils/math/vector.py` | `path\\windows.txt` (backslash) |
+
+### Example — Python: module in a subdirectory
+
+**File layout:**
+```
+main.py          ← entry point
+utils/math.py    ← helper module
+```
+
+```json
+POST /api/v2/execute
+Content-Type: application/json
+
+{
+  "language": "python",
+  "version": "*",
+  "files": [
+    {
+      "name": "main.py",
+      "content": "from utils.math import add\nprint(add(3, 4))"
+    },
+    {
+      "name": "utils/math.py",
+      "content": "def add(a, b):\n    return a + b"
+    }
+  ]
+}
+```
+
+Output: `7`
+
+> **Note:** Python imports follow the directory structure. `utils/math.py` is imported as `from utils.math import ...`. An `__init__.py` is not required for Python 3 (namespace packages).
+
+### Example — Java: packages
+
+```json
+{
+  "language": "java",
+  "version": "*",
+  "files": [
+    {
+      "name": "Main.java",
+      "content": "import com.example.Greeter;\npublic class Main {\n    public static void main(String[] args) {\n        System.out.println(new Greeter().greet());\n    }\n}"
+    },
+    {
+      "name": "com/example/Greeter.java",
+      "content": "package com.example;\npublic class Greeter {\n    public String greet() { return \"Hello from a package!\"; }\n}"
+    }
+  ]
+}
+```
+
+> **Java package note:** When files are in subdirectories, `javac` receives the full relative path (`com/example/Greeter.java`). The `package` declaration in the file must match the directory path.
+
+### Folders with workspace persistence
+
+Folder paths work exactly the same in `workspace_files`. List the full path:
+
+```json
+{
+  "workspace_files": ["utils/math.py", "com/example/Greeter.java"]
+}
+```
+
+Piston re-captures these files (including their folder paths) in `output_files` after each run, so clients can persist and re-inject them on the next request.
+
+---
+
 ## Workspace — Cross-run Persistence
 
 Use `workspace_files` when you want files to survive across separate runs — read a file written in run 1 during run 2, accumulate logs, maintain a database, etc.

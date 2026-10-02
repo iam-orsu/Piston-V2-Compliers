@@ -441,6 +441,20 @@
             border-radius: 3px;
         }
         .fe-clear-btn:hover { color: var(--red); background: rgba(248,81,73,0.1); }
+        .fe-folder {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 8px;
+            font-size: 11px;
+            font-family: var(--mono);
+            color: var(--text-dim);
+            user-select: none;
+            border-bottom: 1px solid rgba(48,54,61,0.3);
+            background: rgba(88,166,255,0.04);
+        }
+        .fe-folder-icon { font-size: 12px; flex-shrink: 0; }
+        .fe-folder-name { font-weight: 600; color: var(--accent); letter-spacing: 0.02em; }
         .fe-file { display: flex; flex-direction: column; border-bottom: 1px solid rgba(48,54,61,0.5); }
         .fe-file-row {
             display: flex;
@@ -1362,10 +1376,16 @@ async function runCode() {
     const defaultExt = FILE_EXT[lang] || 'txt';
     const defaultStem = FILE_STEM[lang] || 'main';
 
-    // Read user-supplied filename; sanitize and fall back to default if invalid
+    // Read user-supplied filename; sanitize and fall back to default if invalid.
+    // Paths like src/Main.java are allowed; backslash, absolute paths, and
+    // traversal segments (..) are not.
     const rawName = (document.getElementById('filename-input')?.value || '').trim();
-    const fileName = (rawName && !rawName.includes('/') && !rawName.includes('\\') &&
-                      !rawName.startsWith('.') && rawName.includes('.'))
+    const _fnParts = rawName.split('/');
+    const fileName = (rawName &&
+                      !rawName.includes('\\') &&
+                      !rawName.startsWith('/') &&
+                      !_fnParts.some(s => s === '..' || s === '') &&
+                      _fnParts[_fnParts.length - 1].includes('.'))
         ? rawName
         : `${defaultStem}.${defaultExt}`;
 
@@ -2229,28 +2249,53 @@ function renderFileExplorer() {
             <button class="fe-clear-btn" onclick="feClearWorkspace()" title="Clear workspace">✕</button>
         </div>`;
 
-    const fileItems = feFiles.map((f, i) => {
+    // Sort so folder contents group together (src/A before src/B before utils/C)
+    const sorted = [...feFiles].sort((a, b) => a.name.localeCompare(b.name));
+
+    const seenDirs = new Set();
+    let html = '';
+
+    for (const f of sorted) {
+        const origIdx = feFiles.indexOf(f);
+        const parts   = f.name.split('/');
+        const depth   = parts.length - 1;
+
+        // Emit a folder header row for each new directory segment
+        for (let d = 0; d < depth; d++) {
+            const dirPath = parts.slice(0, d + 1).join('/');
+            if (!seenDirs.has(dirPath)) {
+                seenDirs.add(dirPath);
+                const indent = 8 + d * 14;
+                html += `<div class="fe-folder" style="padding-left:${indent}px">
+                    <span class="fe-folder-icon">📁</span>
+                    <span class="fe-folder-name">${escHtml(parts[d])}/</span>
+                </div>`;
+            }
+        }
+
+        // Emit the file row, indented under its folder
+        const indent   = 8 + depth * 14;
         const isBinary = f.encoding === 'base64';
         const preview  = isBinary
             ? `<div class="fe-preview-binary">Binary file · ${feFormatSize(f.size)}<br>
-               <small style="color:var(--accent);cursor:pointer" onclick="feDownload(${i})">⬇ Download</small></div>`
+               <small style="color:var(--accent);cursor:pointer" onclick="feDownload(${origIdx})">⬇ Download</small></div>`
             : `<div class="fe-preview-content">${escHtml(f.content.slice(0, 3000))}${f.content.length > 3000 ? '\n\n… (truncated — download to see full file)' : ''}</div>`;
 
-        return `<div class="fe-file" id="fe-file-${i}">
-            <div class="fe-file-row" id="fe-row-${i}" onclick="feTogglePreview(${i})">
+        html += `<div class="fe-file" id="fe-file-${origIdx}">
+            <div class="fe-file-row" id="fe-row-${origIdx}" onclick="feTogglePreview(${origIdx})" style="padding-left:${indent}px">
                 <span class="fe-file-icon">${feIcon(f.name)}</span>
-                <span class="fe-file-name" title="${escHtml(f.name)}">${escHtml(f.name)}</span>
+                <span class="fe-file-name" title="${escHtml(f.name)}">${escHtml(parts[parts.length - 1])}</span>
                 <span class="fe-file-size">${feFormatSize(f.size)}</span>
                 <span class="fe-file-actions">
-                    <button class="fe-dl-btn" onclick="event.stopPropagation(); feDownload(${i})" title="Download">⬇</button>
-                    <button class="fe-del-btn" onclick="event.stopPropagation(); feDeleteFile(${i})" title="Remove from workspace">✕</button>
+                    <button class="fe-dl-btn" onclick="event.stopPropagation(); feDownload(${origIdx})" title="Download">⬇</button>
+                    <button class="fe-del-btn" onclick="event.stopPropagation(); feDeleteFile(${origIdx})" title="Remove from workspace">✕</button>
                 </span>
             </div>
-            <div class="fe-preview" id="fe-preview-${i}">${preview}</div>
+            <div class="fe-preview" id="fe-preview-${origIdx}">${preview}</div>
         </div>`;
-    }).join('');
+    }
 
-    body.innerHTML = sectionHeader + fileItems;
+    body.innerHTML = sectionHeader + html;
 }
 
 function feTogglePreview(idx) {
@@ -2321,8 +2366,12 @@ function saveToWorkspace() {
     const rawName = (document.getElementById('filename-input')?.value || '').trim();
     const defaultExt  = FILE_EXT[lang]  || 'txt';
     const defaultStem = FILE_STEM[lang] || 'main';
-    const fileName = (rawName && !rawName.includes('/') && !rawName.includes('\\') &&
-                      !rawName.startsWith('.') && rawName.includes('.'))
+    const _swParts = rawName.split('/');
+    const fileName = (rawName &&
+                      !rawName.includes('\\') &&
+                      !rawName.startsWith('/') &&
+                      !_swParts.some(s => s === '..' || s === '') &&
+                      _swParts[_swParts.length - 1].includes('.'))
         ? rawName
         : `${defaultStem}.${defaultExt}`;
 

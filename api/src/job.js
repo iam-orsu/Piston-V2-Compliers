@@ -92,8 +92,15 @@ class Job {
         // Set of filenames the client considers "workspace" files — injected
         // from a previous run. These are re-captured after run even if they
         // existed before, so modifications made during the run are returned.
+        // Reject entries that attempt path traversal (../), absolute paths (/…),
+        // or backslash separators — only forward-slash relative paths are valid.
         this.workspace_files = new Set(
-            Array.isArray(workspace_files) ? workspace_files : []
+            (Array.isArray(workspace_files) ? workspace_files : [])
+                .filter(f => {
+                    if (typeof f !== 'string') return false;
+                    const norm = path.normalize(f).replace(/\\/g, '/');
+                    return !norm.startsWith('..') && !path.isAbsolute(norm);
+                })
         );
 
         this.args = args;
