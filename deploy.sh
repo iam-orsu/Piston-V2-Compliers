@@ -290,6 +290,55 @@ auto_install_runtimes() {
     echo -e "${GREEN}${BOLD}✅  Runtime installation complete.${NC}"
 }
 
+# Patch language runtimes whose scripts differ from the registry defaults.
+# Called after auto_install_runtimes so the packages directory already exists.
+# Safe to re-run — it only overwrites the specific files we need to change.
+patch_runtimes() {
+    echo ""
+    echo -e "${CYAN}${BOLD}🔧  Patching language runtimes...${NC}"
+
+    # ── Java 15.0.2 ──────────────────────────────────────────────────────────
+    # The registry run script uses the Java source launcher (java File.java),
+    # which recompiles a single file and cannot resolve multi-file workspace
+    # classes. We replace it with a proper compile + run split:
+    #   compile: javac "$@"   — compiles all passed .java files to .class
+    #   run:     java Main    — executes the already-compiled class
+    local java_pkg
+    java_pkg=$(docker exec piston_api1 \
+        find /piston/packages/java -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -1)
+
+    if [[ -n "$java_pkg" ]]; then
+        step "Patching java run + compile scripts in ${java_pkg}"
+
+        docker exec piston_api1 bash -c "
+cat > '${java_pkg}/compile' << 'SCRIPT'
+#!/usr/bin/env bash
+javac \"\$@\"
+SCRIPT
+chmod +x '${java_pkg}/compile'
+
+cat > '${java_pkg}/run' << 'SCRIPT'
+#!/usr/bin/env bash
+classname=\"\${1%.java}\"
+shift
+java \"\$classname\" \"\$@\"
+SCRIPT
+chmod +x '${java_pkg}/run'
+"
+        step "Java runtime patched."
+    else
+        warn "Java package not found in volume — skipping patch (install java first)"
+    fi
+
+    # Restart API replicas so runtime.compiled is re-evaluated from the patched files
+    echo -e "${CYAN}  Restarting API replicas to apply runtime patches...${NC}"
+    $DC restart api1 api2 api3 2>/dev/null || true
+    wait_for_api
+
+    echo ""
+    echo -e "${GREEN}${BOLD}✅  Runtime patches applied.${NC}"
+}
+
 # ── Commands ─────────────────────────────────────────────────────────────────
 build_sandbox_image() {
     echo -e "${CYAN}${BOLD}🔒  Building hardened sandbox image...${NC}"
@@ -320,6 +369,7 @@ cmd_start() {
 
     if wait_for_api; then
         auto_install_runtimes
+        patch_runtimes
     fi
 
     print_ready_banner
@@ -393,6 +443,7 @@ cmd_restart() {
     $DC up -d --build --remove-orphans
     if wait_for_api; then
         auto_install_runtimes
+        patch_runtimes
     fi
     print_ready_banner
 }
