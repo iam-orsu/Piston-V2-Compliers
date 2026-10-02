@@ -564,6 +564,17 @@ class Job {
             if (!is_new && !is_workspace)        continue;
             if (output_files.length >= MAX_OUTPUT_FILES) break;
 
+            // Skip runtime-generated source-copy artifacts.
+            // Some language run scripts copy the entry-point with an extra extension
+            // (e.g. a Java run.sh doing `cp "$1" "${1}.java"` turns Main.java into
+            // Main.java.java). If stripping the last extension yields a path that
+            // already existed in the sandbox before the run, this is a runtime
+            // artifact — not user output — and must not enter the workspace.
+            if (is_new) {
+                const dot = rel.lastIndexOf('.');
+                if (dot > 0 && pre_snapshot.has(rel.slice(0, dot))) continue;
+            }
+
             const abs = path.join(submission_dir, rel);
             let stat;
             try {
