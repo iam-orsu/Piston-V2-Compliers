@@ -2028,6 +2028,27 @@ let feFiles     = [];
 let feActiveIdx = -1;
 let feCollapsed = false;
 
+const FE_STORAGE_KEY = 'piston_output_files';
+
+function feSaveToStorage() {
+    try {
+        if (feFiles.length > 0) {
+            localStorage.setItem(FE_STORAGE_KEY, JSON.stringify(feFiles));
+        } else {
+            localStorage.removeItem(FE_STORAGE_KEY);
+        }
+    } catch (_) {}
+}
+
+function feLoadFromStorage() {
+    try {
+        const raw = localStorage.getItem(FE_STORAGE_KEY);
+        if (!raw) return;
+        const files = JSON.parse(raw);
+        if (Array.isArray(files) && files.length > 0) renderFileExplorer(files);
+    } catch (_) {}
+}
+
 const FE_ICONS = {
     py:'🐍', js:'📜', ts:'📜', java:'☕', c:'⚙️', cpp:'⚙️', cc:'⚙️',
     cs:'⚙️', go:'🔵', rs:'🦀', rb:'💎', php:'🐘', kt:'⚙️', swift:'⚙️',
@@ -2090,6 +2111,7 @@ function renderFileExplorer(files) {
     }).join('');
 
     body.innerHTML = sectionHeader + fileItems;
+    feSaveToStorage();
 }
 
 function feTogglePreview(idx) {
@@ -2148,6 +2170,7 @@ function clearFileExplorer() {
     const body = document.getElementById('fe-body');
     if (!body) return;
     body.innerHTML = '<div class="fe-empty" id="fe-empty"><span class="fe-empty-icon">📁</span>Run code that creates files<br>to see them here</div>';
+    feSaveToStorage();
 }
 
 function feToggleCollapse() {
@@ -2159,6 +2182,8 @@ function feToggleCollapse() {
 }
 
 document.getElementById('fe-collapse-btn').addEventListener('click', feToggleCollapse);
+
+feLoadFromStorage();
 
 // ── SQL event listeners ────────────────────────────────────────────────────
 
