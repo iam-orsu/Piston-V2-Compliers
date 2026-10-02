@@ -1,26 +1,39 @@
-# API
+# Piston API v2 — Reference
 
-Piston exposes an API for managing packages and executing user-defined code.
+Base path: `/api/v2/`
+All request bodies must be `Content-Type: application/json`.
+All error responses return `{ "message": "..." }` with a 4xx or 5xx status code.
 
-The API is broken in to 2 main sections - packages and jobs.
+---
 
-The API is exposed from the container, by default on port 2000, at `/api/v2/`.
+## Quick mental model
 
-All inputs are validated, and if an error occurs, a 4xx or 5xx status code is returned.
-In this case, a JSON payload is sent back containing the error message as `message`
+```
+files[]           → everything written to the sandbox before the job runs
+workspace_files[] → subset of files[] carried over from a previous run
+output_files[]    → files created/modified during the run, returned to you
+```
+
+**Multi-file / OOP in one run** — just put all source files in `files[]`. No `workspace_files` needed.
+
+**Cross-run persistence** — take `output_files` from a response, inject them back into `files[]` on the next request, and list their names in `workspace_files`. Piston will re-capture them after each run so you always get the latest version back.
+
+---
 
 ## Runtimes
 
 ### `GET /api/v2/runtimes`
 
-Returns a list of available languages, including the version, runtime and aliases.
+Returns all installed language runtimes.
 
 #### Response
 
--   `[].language`: Name of the language
--   `[].version`: Version of the runtime
--   `[].aliases`: List of alternative names that can be used for the language
--   `[].runtime` (_optional_): Name of the runtime used to run the langage, only provided if alternative runtimes exist for the language
+| Field | Type | Description |
+|---|---|---|
+| `[].language` | string | Canonical language name |
+| `[].version` | string | Runtime version |
+| `[].aliases` | string[] | Alternative names accepted by the execute endpoint |
+| `[].runtime` | string? | Runtime engine name (only when alternatives exist) |
 
 #### Example
 
@@ -30,102 +43,83 @@ GET /api/v2/runtimes
 
 ```json
 HTTP/1.1 200 OK
-Content-Type: application/json
 
 [
-  {
-    "language": "bash",
-    "version": "5.1.0",
-    "aliases": ["sh"]
-  },
-  {
-    "language": "javascript",
-    "version": "15.10.0",
-    "aliases": ["node-javascript", "node-js", "javascript", "js"],
-    "runtime": "node"
-  }
+  { "language": "python",     "version": "3.12.0",  "aliases": ["py", "python3"] },
+  { "language": "java",       "version": "15.0.2",  "aliases": ["java"] },
+  { "language": "javascript", "version": "20.11.1", "aliases": ["js", "node"], "runtime": "node" }
 ]
 ```
+
+---
 
 ## Execute
 
 ### `POST /api/v2/execute`
 
-Runs the given code, using the given runtime and arguments, returning the result.
+Compiles (if needed) and runs code inside an isolated sandbox. Returns stdout, stderr, exit code, and any files the program created.
 
-#### Request
+#### Request fields
 
--   `language`: Name or alias of a language listed in [runtimes](#runtimes)
--   `version`: SemVer version selector of a language listed in [runtimes](#runtimes)
--   `files`: An array of files which should be uploaded into the job context
--   `files[].name` (_optional_): Name of file to be written, if none a random name is picked
--   `files[].content`: Content of file to be written
--   `files[].encoding` (_optional_): The encoding scheme used for the file content. One of `base64`, `hex` or `utf8`. Defaults to `utf8`.
--   `stdin` (_optional_): Text to pass into stdin of the program. Defaults to blank string.
--   `args` (_optional_): Arguments to pass to the program. Defaults to none
--   `run_timeout` (_optional_): The maximum allowed time in milliseconds for the compile stage to finish before bailing out. Must be a number, less than or equal to the configured maximum timeout.
--   `compile_timeout` (_optional_): The maximum allowed time in milliseconds for the run stage to finish before bailing out. Must be a number, less than or equal to the configured maximum timeout. Defaults to maximum.
--   `compile_memory_limit` (_optional_): The maximum amount of memory the compile stage is allowed to use in bytes. Must be a number, less than or equal to the configured maximum. Defaults to maximum, or `-1` (no limit) if none is configured.
--   `run_memory_limit` (_optional_): The maximum amount of memory the run stage is allowed to use in bytes. Must be a number, less than or equal to the configured maximum. Defaults to maximum, or `-1` (no limit) if none is configured.
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `language` | string | ✓ | Language name or alias from `/runtimes` |
+| `version` | string | ✓ | SemVer selector, e.g. `"3.12.0"` or `"*"` for latest |
+| `files` | array | ✓ | Files to write into the sandbox. First file is the entry point. |
+| `files[].name` | string | | Filename (default: random). Must match public class name in Java. |
+| `files[].content` | string | ✓ | File content |
+| `files[].encoding` | string | | `"utf8"` (default), `"base64"`, or `"hex"` |
+| `workspace_files` | string[] | | Names of files in `files[]` that came from a previous run's `output_files`. See [Workspace](#workspace--cross-run-persistence). |
+| `stdin` | string | | Text piped into stdin. Default: `""` |
+| `args` | string[] | | Command-line arguments. Default: `[]` |
+| `run_timeout` | number | | Max ms for run stage. Must not exceed server limit. |
+| `compile_timeout` | number | | Max ms for compile stage. Must not exceed server limit. |
+| `run_memory_limit` | number | | Max bytes for run stage. `-1` = no limit. |
+| `compile_memory_limit` | number | | Max bytes for compile stage. `-1` = no limit. |
 
-#### Response
+#### Response fields
 
--   `language`: Name (not alias) of the runtime used
--   `version`: Version of the used runtime
--   `run`: Results from the run stage
--   `run.stdout`: stdout from run stage process
--   `run.stderr`: stderr from run stage process
--   `run.output`: stdout and stderr combined in order of data from run stage process
--   `run.code`: Exit code from run process, or null if signal is not null
--   `run.signal`: Signal from run process, or null if code is not null
--   `compile` (_optional_): Results from the compile stage, only provided if the runtime has a compile stage
--   `compile.stdout`: stdout from compile stage process
--   `compile.stderr`: stderr from compile stage process
--   `compile.output`: stdout and stderr combined in order of data from compile stage process
--   `compile.code`: Exit code from compile process, or null if signal is not null
--   `compile.signal`: Signal from compile process, or null if code is not null
--   `output_files`: Array of files created by the program during the run stage. Always present; empty array `[]` if no files were written. Capped at 20 files and 5 MB total. Files over 1 MB each are silently skipped. Symlinks are never followed.
--   `output_files[].name`: Relative path of the file within the job's working directory (e.g. `report.txt`, `data/output.csv`)
--   `output_files[].content`: File content as a string. Text files (valid UTF-8) are returned as-is. Binary files are base64-encoded.
--   `output_files[].encoding`: `"utf8"` for text files, `"base64"` for binary files
--   `output_files[].size`: File size in bytes
-
-#### Output Files — Language Notes
-
-| Language | Compile stage | What `output_files` contains |
+| Field | Type | Description |
 |---|---|---|
-| Python, JavaScript, Node, Ruby, etc. | No | Files your code created with `open()`, `fs.writeFile()`, etc. |
-| C, C++ | Yes | Files created during `main()` — compiled binary is excluded from diff |
-| Java | Yes | Files created at runtime — `.class` files are excluded from diff |
-
-The diff is taken **after compile and before run**, so compiled artifacts (`.class`, `.o`, binaries) never appear in `output_files` regardless of language.
+| `language` | string | Canonical language name used |
+| `version` | string | Runtime version used |
+| `run` | object | Results from the run stage |
+| `run.stdout` | string | stdout output |
+| `run.stderr` | string | stderr output |
+| `run.output` | string | stdout + stderr interleaved |
+| `run.code` | number? | Exit code, or `null` if killed by signal |
+| `run.signal` | string? | Signal name if killed, otherwise `null` |
+| `compile` | object? | Only present for compiled languages (Java, C, C++, Go, Rust, …) |
+| `compile.stdout` | string | Compiler stdout |
+| `compile.stderr` | string | Compiler stderr (errors/warnings) |
+| `compile.output` | string | Combined compiler output |
+| `compile.code` | number? | Compiler exit code |
+| `compile.signal` | string? | Signal if compiler was killed |
+| `output_files` | array | Files created or modified during the run. Always present; empty array if none. Capped at 20 files / 1 MB per file / 5 MB total. |
+| `output_files[].name` | string | Path relative to working dir (e.g. `report.txt`, `data/out.csv`) |
+| `output_files[].content` | string | UTF-8 text as-is, or base64 for binary files |
+| `output_files[].encoding` | string | `"utf8"` or `"base64"` |
+| `output_files[].size` | number | File size in bytes |
 
 ---
 
-## Multi-file Compilation & OOP (Cross-file Classes)
+## Multi-file Projects & OOP
 
-Piston supports multi-file projects — multiple source files compiled together in one job. This enables OOP patterns: define a class in one file, use it in another.
+Pass all source files in `files[]`. The **first file** is the entry point. No `workspace_files` needed.
 
-### How It Works
+Piston's compile stage receives only the files that share the same extension as the entry point (e.g. all `.java` files, all `.c` files). Data files (`.txt`, `.h`, `.csv`, etc.) are written to the sandbox so code can read them but are never passed to the compiler.
 
-Pass all source files in the `files[]` array. The **first file** is always the entry point (the one with `main()` / `public static void main`). Additional source files can be any order.
+### File naming rules
 
-Additionally, set `workspace_files` to the list of file names that come from a previous run's `output_files` (your persistent workspace). Piston automatically:
-- Writes all files to the sandbox before compilation
-- Passes same-extension source files to the compiler alongside the entry point
-- Data files (`.txt`, `.csv`, etc.) are written to the sandbox for reading but **not** passed to the compiler
-
-### File Naming Rules
-
-| Language | Entry point name | Why |
+| Language | Entry point constraint | Reason |
 |---|---|---|
-| Java | **Must match the public class name** — e.g. `Main.java` for `public class Main` | Java compiler enforces this |
-| C / C++ | Any `.c` / `.cpp` name — e.g. `main.c` | No constraint |
-| Python / JS / etc. | Any valid filename | Interpreter accepts any name |
+| Java | Filename must match `public class` name — `Main.java` for `public class Main` | Java compiler requirement |
+| C / C++ | Any `.c` / `.cpp` filename | No constraint |
+| Python, JS, Ruby, etc. | Any filename | Interpreter accepts any name |
 
-### Example — Java OOP (Two Classes)
+### Example — Java: Two classes
 
-Define a `Greeter` class in `Greeter.java` and use it from `Main.java`:
+`Greeter.java` defines the class; `Main.java` uses it. Both compile in one request.
 
 ```json
 POST /api/v2/execute
@@ -154,15 +148,44 @@ HTTP/1.1 200 OK
   "language": "java",
   "version": "15.0.2",
   "compile": { "stdout": "", "stderr": "", "code": 0, "signal": null, "output": "" },
-  "run": {
-    "stdout": "Hello, World!\n",
-    "stderr": "", "code": 0, "signal": null, "output": "Hello, World!\n"
-  },
+  "run": { "stdout": "Hello, World!\n", "stderr": "", "code": 0, "signal": null, "output": "Hello, World!\n" },
   "output_files": []
 }
 ```
 
-### Example — C Multi-file (Header + Implementation)
+> **Key point:** `Greeter.java` does NOT need a `main` method. It is not the entry point — it is compiled alongside `Main.java` simply because it shares the `.java` extension.
+
+### Example — Java: Three classes (inheritance)
+
+```json
+POST /api/v2/execute
+Content-Type: application/json
+
+{
+  "language": "java",
+  "version": "*",
+  "files": [
+    {
+      "name": "Main.java",
+      "content": "public class Main {\n    public static void main(String[] args) {\n        Animal dog = new Dog(\"Rex\");\n        System.out.println(dog.speak());\n    }\n}"
+    },
+    {
+      "name": "Animal.java",
+      "content": "public abstract class Animal {\n    protected String name;\n    public Animal(String name) { this.name = name; }\n    public abstract String speak();\n}"
+    },
+    {
+      "name": "Dog.java",
+      "content": "public class Dog extends Animal {\n    public Dog(String name) { super(name); }\n    public String speak() { return name + \" says: Woof!\"; }\n}"
+    }
+  ]
+}
+```
+
+Output: `Rex says: Woof!`
+
+### Example — C: Entry point + implementation + header
+
+`.h` header files are written to the sandbox so `#include` resolves, but only `.c` files are passed to `gcc`.
 
 ```json
 POST /api/v2/execute
@@ -188,11 +211,12 @@ Content-Type: application/json
 }
 ```
 
-> **Note:** `.h` header files are written to the sandbox (so `#include "math_utils.h"` resolves) but are **not** passed to the compiler as source files — only `.c` files matching the entry-point extension are compiled.
+Compiled as: `gcc main.c math_utils.c -o a.out`
+Header `math_utils.h` is in the sandbox but not a compiler argument.
 
-### Example — Python Multi-file (Module Import)
+### Example — Python: Module import
 
-Python has no compile stage — all files land in the same working directory. `import` works out of the box.
+Python has no compile stage. All files land in the working directory. `import` works out of the box.
 
 ```json
 POST /api/v2/execute
@@ -208,43 +232,48 @@ Content-Type: application/json
     },
     {
       "name": "shapes.py",
-      "content": "import math\n\nclass Circle:\n    def __init__(self, r):\n        self.r = r\n    def area(self):\n        return math.pi * self.r ** 2"
+      "content": "import math\n\nclass Circle:\n    def __init__(self, r): self.r = r\n    def area(self): return math.pi * self.r ** 2"
     }
   ]
 }
 ```
 
+Output: `Area: 78.54`
+
 ---
 
-## Workspace — Cross-run File Persistence
+## Workspace — Cross-run Persistence
 
-The workspace API lets you persist files across multiple runs. Files created in run 1 are injected back into run 2's sandbox, enabling stateful sessions (read/write the same file across runs, grow a database, accumulate outputs, etc.).
+Use `workspace_files` when you want files to survive across separate runs — read a file written in run 1 during run 2, accumulate logs, maintain a database, etc.
 
-### Request Fields
+### How it works
 
--   `workspace_files` (_optional_): Array of file name strings. Each name must match a file already present in `files[]`. These files are treated as **workspace files** — they existed before this run (carried over from a previous run's `output_files`).
-
-### Behaviour
-
-| File type | In sandbox? | Passed to compiler? | Captured in `output_files`? |
-|---|---|---|---|
-| Entry-point source file | ✓ | ✓ | ✗ (excluded by pre-run snapshot) |
-| Same-extension workspace source (e.g. `Helper.java`) | ✓ | ✓ | ✓ (re-captured to detect modifications) |
-| Different-extension workspace data (e.g. `data.txt`) | ✓ | ✗ | ✓ (re-captured to detect modifications) |
-| Files created during run | ✓ | — | ✓ |
-
-### Workflow
+1. **Run 1** — your code creates files. They come back in `output_files`.
+2. **Run 2** — put those files back in `files[]` AND list their names in `workspace_files`.
+   - Piston writes them to the sandbox before execution (so code can read them).
+   - After the run, Piston re-captures them and returns them in `output_files` again — even if the code didn't modify them — so you always get the current version back.
+3. Repeat for run 3, 4, …
 
 ```
-Run 1: files=[main.py], workspace_files=[]
-       → output_files=[report.txt]
-
-Run 2: files=[main.py, report.txt], workspace_files=["report.txt"]
-       → report.txt is in sandbox, user code can open() it
-       → output_files=[report.txt]  ← includes any modifications made during run
+Run 1  →  output_files: [notes.txt]
+           ↓ (store client-side)
+Run 2  →  files: [main.py, notes.txt],  workspace_files: ["notes.txt"]
+           →  output_files: [notes.txt]   (updated version)
+           ↓
+Run 3  →  files: [main.py, notes.txt],  workspace_files: ["notes.txt"]
+           → ...
 ```
 
-### Example — Python: Write then Read Across Runs
+### Compiler behaviour with workspace files
+
+| File | Passed to compiler? |
+|---|---|
+| Entry-point source (always `files[0]`) | ✓ |
+| Workspace file, same extension (e.g. `Helper.java`) | ✓ — compiled alongside entry point |
+| Workspace file, different extension (e.g. `data.txt`) | ✗ — in sandbox for reading only |
+| Header file (`.h`) | ✗ — in sandbox for `#include` only |
+
+### Example — Python: Write then read across runs
 
 **Run 1 — write a file:**
 
@@ -258,23 +287,24 @@ Content-Type: application/json
   "files": [
     {
       "name": "main.py",
-      "content": "with open('notes.txt', 'w') as f:\n    f.write('Line 1\\nLine 2\\n')\nprint('Written.')"
+      "content": "with open('log.txt', 'w') as f:\n    f.write('entry 1\\n')\nprint('Written.')"
     }
-  ],
-  "workspace_files": []
-}
-```
-
-```json
-{
-  "run": { "stdout": "Written.\n", "code": 0, ... },
-  "output_files": [
-    { "name": "notes.txt", "content": "Line 1\nLine 2\n", "encoding": "utf8", "size": 14 }
   ]
 }
 ```
 
-**Run 2 — read it back (inject `output_files` from Run 1 into `files`):**
+```json
+HTTP/1.1 200 OK
+
+{
+  "run": { "stdout": "Written.\n", "code": 0 },
+  "output_files": [
+    { "name": "log.txt", "content": "entry 1\n", "encoding": "utf8", "size": 8 }
+  ]
+}
+```
+
+**Run 2 — read and append:**
 
 ```json
 POST /api/v2/execute
@@ -286,30 +316,32 @@ Content-Type: application/json
   "files": [
     {
       "name": "main.py",
-      "content": "with open('notes.txt') as f:\n    print(f.read())"
+      "content": "with open('log.txt', 'a') as f:\n    f.write('entry 2\\n')\nwith open('log.txt') as f:\n    print(f.read())"
     },
     {
-      "name": "notes.txt",
-      "content": "Line 1\nLine 2\n",
+      "name": "log.txt",
+      "content": "entry 1\n",
       "encoding": "utf8"
     }
   ],
-  "workspace_files": ["notes.txt"]
+  "workspace_files": ["log.txt"]
 }
 ```
 
 ```json
+HTTP/1.1 200 OK
+
 {
-  "run": { "stdout": "Line 1\nLine 2\n", "code": 0, ... },
+  "run": { "stdout": "entry 1\nentry 2\n", "code": 0 },
   "output_files": [
-    { "name": "notes.txt", "content": "Line 1\nLine 2\n", "encoding": "utf8", "size": 14 }
+    { "name": "log.txt", "content": "entry 1\nentry 2\n", "encoding": "utf8", "size": 16 }
   ]
 }
 ```
 
-### Example — Java: Workspace + OOP in the Same Run
+### Example — Java: Persistent helper class across sessions
 
-You can combine both features — inject a saved `.java` source file from the workspace AND compile it alongside the new entry point:
+The user wrote `Greeter.java` in a previous session (saved client-side). On this run, inject it as a workspace file — it will be compiled alongside `Main.java`.
 
 ```json
 POST /api/v2/execute
@@ -321,301 +353,301 @@ Content-Type: application/json
   "files": [
     {
       "name": "Main.java",
-      "content": "public class Main {\n    public static void main(String[] args) {\n        Counter c = new Counter();\n        c.increment();\n        c.increment();\n        System.out.println(c.get());\n    }\n}"
+      "content": "public class Main {\n    public static void main(String[] args) {\n        System.out.println(new Greeter(\"World\").greet());\n    }\n}"
     },
     {
-      "name": "Counter.java",
-      "content": "public class Counter {\n    private int n = 0;\n    public void increment() { n++; }\n    public int get() { return n; }\n}",
+      "name": "Greeter.java",
+      "content": "public class Greeter {\n    private String name;\n    public Greeter(String name) { this.name = name; }\n    public String greet() { return \"Hello, \" + name + \"!\"; }\n}",
       "encoding": "utf8"
     }
   ],
-  "workspace_files": ["Counter.java"]
+  "workspace_files": ["Greeter.java"]
 }
 ```
 
-> `Counter.java` is a workspace file (came from a previous run). It shares the `.java` extension with the entry point, so it is compiled together with `Main.java`. Output: `2`.
+`Greeter.java` shares the `.java` extension → compiled: `javac Main.java Greeter.java`. Output: `Hello, World!`
 
-### WebSocket — `output_files` Message
+---
 
-When using `/api/v2/connect`, output files arrive as a dedicated message **before** `exit:done`:
+## WebSocket — Interactive Execution
 
-```json
-{ "type": "output_files", "files": [ { "name": "report.txt", "content": "...", "encoding": "utf8", "size": 42 } ] }
-```
+### `GET /api/v2/connect` (WebSocket upgrade)
 
-Only sent when at least one file was captured. Integrate it like this:
+Streams stdout/stderr in real time and accepts stdin. Use this for interactive programs or when you want live output.
 
-```js
-ws.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
+### Message protocol
 
-    switch (msg.type) {
-        case 'output_files':
-            // Merge into your workspace store, keyed by msg.files[i].name
-            for (const f of msg.files) {
-                workspace[f.name] = f;
-            }
-            break;
+All messages are JSON.
 
-        case 'exit':
-            if (msg.stage === 'done') {
-                // Run complete — workspace is up to date
-            }
-            break;
-    }
-};
-```
+#### Client → Server
 
-**On the next run**, pass the accumulated workspace back:
+| Message | Fields | Description |
+|---|---|---|
+| `init` | (all execute fields) | Start the job. Send once immediately after `onopen`. |
+| `data` | `stream: "stdin"`, `data: string` | Send stdin to a running program. |
+| `signal` | `signal: string` | Send a signal (e.g. `"SIGINT"`) to the running process. |
 
-```js
-const workspaceFiles = Object.values(workspace); // [{name, content, encoding, size}, ...]
-
-ws.send(JSON.stringify({
-    type: 'init',
-    language: 'java',
-    version: '15.0.2',
-    files: [
-        { name: 'Main.java', content: editorCode },
-        ...workspaceFiles.map(f => ({ name: f.name, content: f.content, encoding: f.encoding })),
-    ],
-    workspace_files: workspaceFiles.map(f => f.name),
-}));
-```
-
-#### Example — File I/O (Python)
+**`init` message fields** are identical to the HTTP `/execute` request body, plus `type: "init"`:
 
 ```json
-POST /api/v2/execute
-Content-Type: application/json
-
 {
+  "type": "init",
   "language": "python",
-  "version": "3.12.0",
+  "version": "*",
   "files": [
-    {
-      "name": "main.py",
-      "content": "with open('hello.txt', 'w') as f:\n    f.write('Hello, World!')\nprint('File written.')"
-    }
-  ]
-}
-```
-
-```json
-HTTP/1.1 200 OK
-Content-Type: application/json
-
-{
-  "language": "python",
-  "version": "3.12.0",
-  "run": {
-    "stdout": "File written.\n",
-    "stderr": "",
-    "code": 0,
-    "signal": null,
-    "output": "File written.\n"
-  },
-  "output_files": [
-    {
-      "name": "hello.txt",
-      "content": "Hello, World!",
-      "encoding": "utf8",
-      "size": 13
-    }
-  ]
-}
-```
-
-#### Example — No files created (JavaScript)
-
-```json
-POST /api/v2/execute
-Content-Type: application/json
-
-{
-  "language": "javascript",
-  "version": "20.11.1",
-  "files": [{ "name": "main.js", "content": "console.log('hi')" }]
-}
-```
-
-```json
-HTTP/1.1 200 OK
-
-{
-  "language": "javascript",
-  "version": "20.11.1",
-  "run": { "stdout": "hi\n", "stderr": "", "code": 0, "signal": null, "output": "hi\n" },
-  "output_files": []
-}
-```
-
-#### WebSocket — `output_files` message
-
-When using the `/api/v2/connect` WebSocket endpoint, output files are delivered as a separate message **before** the `{ "type": "exit", "stage": "done" }` close message:
-
-```json
-{ "type": "output_files", "files": [ { "name": "report.txt", "content": "...", "encoding": "utf8", "size": 42 } ] }
-```
-
-This message is only sent if at least one file was captured. Listen for it in your `onmessage` handler:
-
-```js
-ws.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
-    if (msg.type === 'output_files') {
-        // msg.files is the same array as output_files in the HTTP response
-        renderFileExplorer(msg.files);
-    }
-};
-```
-
-#### Example — original JS example (no file I/O)
-
-```json
-POST /api/v2/execute
-Content-Type: application/json
-
-{
-  "language": "js",
-  "version": "15.10.0",
-  "files": [
-    {
-      "name": "my_cool_code.js",
-      "content": "console.log(process.argv)"
-    }
+    { "name": "main.py", "content": "name = input('Name: ')\nprint(f'Hello, {name}!')" }
   ],
+  "workspace_files": [],
   "stdin": "",
-  "args": ["1", "2", "3"],
-  "compile_timeout": 10000,
-  "run_timeout": 3000,
-  "compile_memory_limit": -1,
-  "run_memory_limit": -1
+  "args": []
 }
 ```
 
-```json
-HTTP/1.1 200 OK
-Content-Type: application/json
+#### Server → Client
 
-{
-  "run": {
-    "stdout": "[\n  '/piston/packages/node/15.10.0/bin/node',\n  '/piston/jobs/e87afa0d-6c2a-40b8-a824-ffb9c5c6cb64/my_cool_code.js',\n  '1',\n  '2',\n  '3'\n]\n",
-    "stderr": "",
-    "code": 0,
-    "signal": null,
-    "output": "[\n  '/piston/packages/node/15.10.0/bin/node',\n  '/piston/jobs/e87afa0d-6c2a-40b8-a824-ffb9c5c6cb64/my_cool_code.js',\n  '1',\n  '2',\n  '3'\n]\n"
-  },
-  "output_files": [],
-  "language": "javascript",
-  "version": "15.10.0"
+| Message | Fields | Description |
+|---|---|---|
+| `runtime` | `language`, `version` | Sent after init is accepted. Confirms resolved runtime. |
+| `stage` | `stage: "compile"` or `"run"` | Signals which stage is starting. |
+| `data` | `stream: "stdout"/"stderr"`, `data: string` | Live program output. |
+| `exit` | `stage`, `code`, `signal` | Stage finished. `stage: "run"` → program exited. |
+| `output_files` | `files: [...]` | Files created during run. Sent **before** `exit:done`. Same structure as HTTP `output_files`. |
+| `exit` | `stage: "done"` | Job complete. Server closes the connection after this. |
+| `error` | `message`, `code?` | Error during init or execution. |
+
+#### Close codes
+
+| Code | Meaning |
+|---|---|
+| 4999 | Job completed successfully |
+| 4001 | Initialization timeout (no `init` message received within 10 s) |
+| 4002 | Error — see preceding `error` message |
+| 4003 | Not yet initialized |
+| 4004 | Invalid stream (only `stdin` is writable) |
+| 4005 | Invalid signal |
+| 4429 | Server at capacity — retry after 5 s |
+
+### Full client example (JavaScript)
+
+```js
+class PistonSession {
+    constructor(host) {
+        this.host = host;
+        this.workspace = {}; // { [filename]: { name, content, encoding, size } }
+    }
+
+    run(language, version, filename, code, onOutput) {
+        return new Promise((resolve, reject) => {
+            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const ws = new WebSocket(`${proto}//${this.host}/api/v2/connect`);
+
+            // Workspace files to inject (all except the current entry point)
+            const wsFiles = Object.values(this.workspace)
+                .filter(f => f.name !== filename)
+                .map(f => ({ name: f.name, content: f.content, encoding: f.encoding }));
+
+            ws.onopen = () => {
+                ws.send(JSON.stringify({
+                    type:            'init',
+                    language,
+                    version,
+                    files:           [{ name: filename, content: code }, ...wsFiles],
+                    workspace_files: wsFiles.map(f => f.name),
+                    stdin:           '',
+                    args:            [],
+                }));
+            };
+
+            ws.onmessage = ({ data }) => {
+                const msg = JSON.parse(data);
+                switch (msg.type) {
+                    case 'data':
+                        onOutput(msg.stream, msg.data);
+                        break;
+                    case 'output_files':
+                        // Merge new/modified files into workspace
+                        for (const f of msg.files) {
+                            this.workspace[f.name] = f;
+                        }
+                        break;
+                    case 'exit':
+                        if (msg.stage === 'done') resolve();
+                        break;
+                    case 'error':
+                        reject(new Error(msg.message));
+                        break;
+                }
+            };
+
+            ws.onerror = () => reject(new Error('WebSocket error'));
+        });
+    }
+
+    // Save a file to the workspace client-side without running it.
+    // Useful for helper classes (e.g. Greeter.java) with no main method.
+    saveToWorkspace(filename, content, encoding = 'utf8') {
+        this.workspace[filename] = {
+            name:     filename,
+            content,
+            encoding,
+            size:     new TextEncoder().encode(content).length,
+        };
+    }
+
+    deleteFromWorkspace(filename) {
+        delete this.workspace[filename];
+    }
+
+    clearWorkspace() {
+        this.workspace = {};
+    }
 }
 ```
+
+**Usage:**
+
+```js
+const session = new PistonSession('localhost');
+
+// Save a helper class without running it
+session.saveToWorkspace('Greeter.java',
+    'public class Greeter {\n' +
+    '    private String name;\n' +
+    '    public Greeter(String name) { this.name = name; }\n' +
+    '    public String greet() { return "Hello, " + name + "!"; }\n' +
+    '}'
+);
+
+// Run Main.java — Greeter.java is automatically compiled alongside it
+await session.run('java', '*', 'Main.java',
+    'public class Main {\n' +
+    '    public static void main(String[] args) {\n' +
+    '        System.out.println(new Greeter("World").greet());\n' +
+    '    }\n' +
+    '}',
+    (stream, data) => process.stdout.write(data)
+);
+// Output: Hello, World!
+```
+
+### HTTP execute — equivalent pattern
+
+For stateless HTTP use, manage workspace state on your server:
+
+```js
+async function execute(language, version, filename, code, workspace = {}) {
+    const wsFiles = Object.entries(workspace)
+        .filter(([name]) => name !== filename)
+        .map(([, f]) => ({ name: f.name, content: f.content, encoding: f.encoding }));
+
+    const res = await fetch('/api/v2/execute', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            language,
+            version,
+            files:           [{ name: filename, content: code }, ...wsFiles],
+            workspace_files: wsFiles.map(f => f.name),
+        }),
+    });
+
+    const result = await res.json();
+
+    // Merge output_files back into workspace for next run
+    const nextWorkspace = { ...workspace };
+    for (const f of result.output_files ?? []) {
+        nextWorkspace[f.name] = f;
+    }
+
+    return { result, nextWorkspace };
+}
+```
+
+---
 
 ## Packages
 
 ### `GET /api/v2/packages`
 
-Returns a list of all possible packages, and whether their installation status.
-
-#### Response
-
--   `[].language`: Name of the contained runtime
--   `[].language_version`: Version of the contained runtime
--   `[].installed`: Status on the package being installed
-
-#### Example
-
-```
-GET /api/v2/packages
-```
+Lists all available packages and their installation status.
 
 ```json
 HTTP/1.1 200 OK
-Content-Type: application/json
 
 [
-  {
-    "language": "node",
-    "language_version": "15.10.0",
-    "installed": true
-  },
-  {
-    "language": "bash",
-    "language_version": "5.1.0",
-    "installed": true
-  }
+  { "language": "python",     "language_version": "3.12.0",  "installed": true },
+  { "language": "javascript", "language_version": "20.11.1", "installed": true }
 ]
 ```
 
 ### `POST /api/v2/packages`
 
-Install the given package.
-
-#### Request
-
--   `language`: Name of package from [package list](#get-apiv2packages)
--   `version`: SemVer version selector for package from [package list](#get-apiv2packages)
-
-#### Response
-
--   `language`: Name of package installed
--   `version`: Version of package installed
-
-#### Example
+Installs a package.
 
 ```json
 POST /api/v2/packages
 Content-Type: application/json
 
-{
-  "language": "bash",
-  "version": "5.x"
-}
+{ "language": "python", "version": "3.12.0" }
 ```
 
 ```json
 HTTP/1.1 200 OK
-Content-Type: application/json
 
-{
-  "language": "bash",
-  "version": "5.1.0"
-}
+{ "language": "python", "version": "3.12.0" }
 ```
 
 ### `DELETE /api/v2/packages`
 
-Uninstall the given package.
+Not yet implemented — returns `501`.
 
-#### Request
+---
 
--   `language`: Name of package from [package list](#get-apiv2packages)
--   `version`: SemVer version selector for package from [package list](#get-apiv2packages)
+## Health
 
-#### Response
+### `GET /api/v2/health`
 
--   `language`: Name of package uninstalled
--   `version`: Version of package uninstalled
-
-#### Example
-
-```json
-DELETE /api/v2/packages
-Content-Type: application/json
-
-{
-  "language": "bash",
-  "version": "5.x"
-}
-```
+Returns server status and queue metrics. Used by load balancers and monitoring.
 
 ```json
 HTTP/1.1 200 OK
-Content-Type: application/json
 
 {
-  "language": "bash",
-  "version": "5.1.0"
+  "status":      "ok",
+  "runtimes":    12,
+  "active":      3,
+  "queued":      0,
+  "queue_max":   64
 }
 ```
+
+Returns `503` with `"status": "degraded"` when the queue is full.
+
+---
+
+## Rate limits
+
+| Endpoint | Limit |
+|---|---|
+| `POST /api/v2/execute` | 30 req/s, burst 500 per IP |
+| `GET /api/v2/connect` (WS) | 10 upgrades/s, burst 20 per IP |
+| `GET /api/v2/packages` | 30 req/min per IP |
+| `POST /api/v2/packages` | 5 req/min per IP |
+
+When rate-limited, the server returns `429` with `Retry-After: 5`.
+
+---
+
+## Limits
+
+| Resource | Limit |
+|---|---|
+| `output_files` count | 20 files per run |
+| `output_files` single file | 1 MB |
+| `output_files` total | 5 MB per run |
+| Run wall time | 30 s (configurable) |
+| Compile wall time | 30 s (configurable) |
+| Run memory | 256 MB (configurable) |
+| Compile memory | 512 MB (configurable) |
+| stdin / request body | 2 MB |
+| Networking | Disabled inside sandbox |
