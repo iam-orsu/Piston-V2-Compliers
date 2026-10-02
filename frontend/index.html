@@ -206,6 +206,25 @@
         .file-tab.active { color: var(--text); border-bottom-color: var(--accent); }
         .file-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 
+        #filename-input {
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid transparent;
+            color: var(--text);
+            font-family: var(--mono);
+            font-size: 12px;
+            outline: none;
+            width: 120px;
+            min-width: 60px;
+            max-width: 220px;
+            padding: 1px 2px;
+            cursor: text;
+            transition: border-color 0.15s;
+        }
+        #filename-input:focus {
+            border-bottom-color: var(--accent);
+        }
+
         #editor { flex: 1; min-height: 0; }
 
         /* ── Terminal Panel ── */
@@ -887,7 +906,9 @@
         <div class="editor-titlebar">
             <div class="file-tab active">
                 <div class="file-dot"></div>
-                <span id="filename-label">main.py</span>
+                <input id="filename-input" type="text" value="main.py"
+                       spellcheck="false" autocomplete="off" autocorrect="off"
+                       title="Click to rename this file">
             </div>
         </div>
         <div id="editor"></div>
@@ -1299,7 +1320,9 @@ function onLangChange() {
     editor.setPosition({ lineNumber: 1, column: 1 });
     const stem = FILE_STEM[lang] || 'main';
     const ext  = FILE_EXT[lang] || 'txt';
-    document.getElementById('filename-label').textContent = `${stem}.${ext}`;
+    const fnInput = document.getElementById('filename-input');
+    fnInput.value = `${stem}.${ext}`;
+    fnInput.style.width = Math.max(60, fnInput.value.length * 8) + 'px';
     setStatus(`${lang} ${rt.version}`, 'Ready — Ctrl+Enter to run', 'default');
 }
 
@@ -1314,9 +1337,22 @@ async function runCode() {
     if (!rt || !editor) return;
 
     const code = editor.getValue();
-    const stem = FILE_STEM[lang] || 'main';
-    const ext  = FILE_EXT[lang] || 'txt';
-    const fileName = `${stem}.${ext}`;
+    const defaultExt = FILE_EXT[lang] || 'txt';
+    const defaultStem = FILE_STEM[lang] || 'main';
+
+    // Read user-supplied filename; sanitize and fall back to default if invalid
+    const rawName = (document.getElementById('filename-input')?.value || '').trim();
+    const fileName = (rawName && !rawName.includes('/') && !rawName.includes('\\') &&
+                      !rawName.startsWith('.') && rawName.includes('.'))
+        ? rawName
+        : `${defaultStem}.${defaultExt}`;
+
+    // Keep the input in sync with the resolved name
+    const fnInput = document.getElementById('filename-input');
+    if (fnInput) {
+        fnInput.value = fileName;
+        fnInput.style.width = Math.max(60, fileName.length * 8) + 'px';
+    }
 
     setRunning(true);
     termClear();
@@ -2254,6 +2290,15 @@ function feToggleCollapse() {
 }
 
 document.getElementById('fe-collapse-btn').addEventListener('click', feToggleCollapse);
+
+// Auto-resize filename input as the user types
+document.getElementById('filename-input').addEventListener('input', function() {
+    this.style.width = Math.max(60, this.value.length * 8) + 'px';
+});
+// Prevent Enter from submitting / losing focus unexpectedly
+document.getElementById('filename-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { this.blur(); e.preventDefault(); }
+});
 
 // ── SQL event listeners ────────────────────────────────────────────────────
 

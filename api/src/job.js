@@ -442,11 +442,17 @@ class Job {
         if (this.runtime.compiled) {
             this.logger.debug('Compiling');
             emit_event_bus_stage('compile');
-            // Exclude workspace data files from compile args — they're in the
-            // sandbox so user code can read them, but they're not source files.
-            const compile_source_files = code_files.filter(
-                f => !this.workspace_files.has(f.name)
-            );
+            // Multi-file compilation: include workspace files whose extension
+            // matches the primary source file (e.g. Helper.java alongside Main.java,
+            // utils.c alongside main.c). Workspace files with different extensions
+            // (data.txt, config.csv) are excluded — they're in the sandbox for
+            // reading but are not source files.
+            const primary_ext = path.extname(code_files[0]?.name ?? '').toLowerCase();
+            const compile_source_files = code_files.filter(f => {
+                if (!this.workspace_files.has(f.name)) return true;
+                return primary_ext !== '' &&
+                    path.extname(f.name).toLowerCase() === primary_ext;
+            });
             compile = await this.safe_call(
                 box,
                 'compile',
