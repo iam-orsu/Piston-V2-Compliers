@@ -300,28 +300,44 @@ patch_runtimes() {
     # ── Java ─────────────────────────────────────────────────────────────────
     # The registry run script uses the Java source launcher (java File.java),
     # which recompiles a single file and cannot resolve multi-file workspace
-    # classes. We replace it with a proper compile + run split using docker cp
-    # to avoid shell-quoting issues with heredocs inside docker exec.
+    # classes. We replace it with a proper compile + run split.
     local java_pkg
     java_pkg=$(docker exec piston_api1 \
         find /piston/packages/java -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -1)
 
-    if [[ -n "$java_pkg" ]]; then
+    if [[ -z "$java_pkg" ]]; then
+        warn "Java package not found in volume — skipping patch (install java first)"
+    else
         step "Patching java runtime at ${java_pkg}"
 
-        # Copy the vetted scripts directly from the repo — no quoting issues
-        docker cp "$SCRIPT_DIR/packages/java/15.0.2/compile" "piston_api1:${java_pkg}/compile"
-        docker cp "$SCRIPT_DIR/packages/java/15.0.2/run"     "piston_api1:${java_pkg}/run"
-        docker exec piston_api1 chmod +x "${java_pkg}/compile" "${java_pkg}/run"
+        local compile_src="$SCRIPT_DIR/packages/java/15.0.2/compile"
+        local run_src="$SCRIPT_DIR/packages/java/15.0.2/run"
 
-        # Verify
-        if docker exec piston_api1 test -f "${java_pkg}/compile"; then
-            step "Java runtime patched successfully."
+        if [[ ! -f "$compile_src" ]]; then
+            warn "packages/java/15.0.2/compile missing from repo — cannot patch"
         else
-            warn "Java compile script was not written — check docker cp permissions"
+            step "  compile src: $compile_src"
+            step "  run src:     $run_src"
+
+            docker cp "$compile_src" "piston_api1:${java_pkg}/compile" \
+                && step "  compile cp OK" || warn "  compile cp FAILED"
+            docker cp "$run_src"     "piston_api1:${java_pkg}/run" \
+                && step "  run cp OK"     || warn "  run cp FAILED"
+
+            # Strip Windows CRLF line endings in case files were checked out on Windows
+            docker exec piston_api1 \
+                sed -i 's/\r//' "${java_pkg}/compile" "${java_pkg}/run" 2>/dev/null || true
+            docker exec piston_api1 \
+                chmod +x "${java_pkg}/compile" "${java_pkg}/run"
+
+            if docker exec piston_api1 test -f "${java_pkg}/compile"; then
+                step "Java compile script contents:"
+                docker exec piston_api1 cat "${java_pkg}/compile"
+                step "Java runtime patched successfully."
+            else
+                warn "Java compile script still missing after cp"
+            fi
         fi
-    else
-        warn "Java package not found in volume — skipping patch (install java first)"
     fi
 
     # Restart API replicas so runtime.compiled is re-evaluated from the patched files
