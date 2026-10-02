@@ -340,11 +340,8 @@ patch_runtimes() {
         fi
     fi
 
-    # Restart API replicas so runtime.compiled is re-evaluated from the patched files
-    echo -e "${CYAN}  Restarting API replicas to apply runtime patches...${NC}"
-    $DC restart api1 api2 api3 2>/dev/null || true
-    wait_for_api
-
+    # No container restart needed — runtime.compiled is lazily evaluated per-job.
+    # The patched compile script will be picked up on the next Java execution.
     echo ""
     echo -e "${GREEN}${BOLD}✅  Runtime patches applied.${NC}"
 }
@@ -500,6 +497,11 @@ cmd_install() {
     echo -e "${GREEN}✅  Done! Refresh the IDE to see ${lang} in the dropdown.${NC}"
 }
 
+cmd_patch() {
+    check_docker
+    patch_runtimes
+}
+
 cmd_list() {
     check_docker
     echo -e "${BLUE}${BOLD}Available packages from registry:${NC}"
@@ -538,6 +540,7 @@ cmd_help() {
     echo -e "  ${CYAN}runtimes${NC}            List installed language runtimes"
     echo -e "  ${CYAN}install${NC} <lang>      Install a specific language runtime"
     echo -e "  ${CYAN}list${NC}                List all available packages from registry"
+    echo -e "  ${CYAN}patch${NC}               Re-apply runtime script patches (e.g. Java multi-file)"
     echo ""
     echo -e "${BOLD}Examples:${NC}"
     echo -e "  ./deploy.sh start"
@@ -566,6 +569,7 @@ case "${1:-help}" in
     status)   cmd_status ;;
     logs)     cmd_logs "${2:-}" ;;
     install)  cmd_install "${2:-}" ;;
+    patch)    cmd_patch ;;
     list)     cmd_list ;;
     runtimes) cmd_runtimes ;;
     help|--help|-h) cmd_help ;;
