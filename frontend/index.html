@@ -225,6 +225,27 @@
             border-bottom-color: var(--accent);
         }
 
+        #save-to-ws-btn {
+            margin-left: 8px;
+            padding: 2px 9px;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-dim);
+            font-size: 11px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: border-color 0.15s, color 0.15s;
+        }
+        #save-to-ws-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+        #save-to-ws-btn.saved {
+            border-color: var(--green);
+            color: var(--green);
+        }
+
         #editor { flex: 1; min-height: 0; }
 
         /* ── Terminal Panel ── */
@@ -910,6 +931,7 @@
                        spellcheck="false" autocomplete="off" autocorrect="off"
                        title="Click to rename this file">
             </div>
+            <button id="save-to-ws-btn" title="Save current file to workspace without running">+ Save to Workspace</button>
         </div>
         <div id="editor"></div>
     </div>
@@ -2290,6 +2312,36 @@ function feToggleCollapse() {
 }
 
 document.getElementById('fe-collapse-btn').addEventListener('click', feToggleCollapse);
+
+// Save current editor content to workspace without running.
+// Lets users save helper classes (no main method) for multi-file compilation.
+function saveToWorkspace() {
+    if (!editor) return;
+    const lang = document.getElementById('lang-select').value;
+    const rawName = (document.getElementById('filename-input')?.value || '').trim();
+    const defaultExt  = FILE_EXT[lang]  || 'txt';
+    const defaultStem = FILE_STEM[lang] || 'main';
+    const fileName = (rawName && !rawName.includes('/') && !rawName.includes('\\') &&
+                      !rawName.startsWith('.') && rawName.includes('.'))
+        ? rawName
+        : `${defaultStem}.${defaultExt}`;
+
+    const content = editor.getValue();
+    feWorkspace[fileName] = { name: fileName, content, encoding: 'utf8', size: content.length };
+    feSaveWorkspace();
+    renderFileExplorer();
+
+    // Brief visual confirmation on the button
+    const btn = document.getElementById('save-to-ws-btn');
+    btn.textContent = '✓ Saved';
+    btn.classList.add('saved');
+    setTimeout(() => {
+        btn.textContent = '+ Save to Workspace';
+        btn.classList.remove('saved');
+    }, 1500);
+}
+
+document.getElementById('save-to-ws-btn').addEventListener('click', saveToWorkspace);
 
 // Auto-resize filename input as the user types
 document.getElementById('filename-input').addEventListener('input', function() {
