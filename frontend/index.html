@@ -1389,7 +1389,7 @@ async function runCode() {
 
                 case 'output_files':
                     if (msg.files && msg.files.length > 0) {
-                        feMergeFiles(msg.files);
+                        feMergeFiles(msg.files, lang);
                     }
                     break;
             }
@@ -1480,7 +1480,9 @@ function setRunning(running) {
     isRunning = running;
     const runBtn  = document.getElementById('run-btn');
     const killBtn = document.getElementById('kill-btn');
-    runBtn.disabled = running;
+    const langSel = document.getElementById('lang-select');
+    runBtn.disabled  = running;
+    langSel.disabled = running;   // prevent language switch mid-run
     runBtn.classList.toggle('loading', running);
     killBtn.classList.toggle('visible', running);
 }
@@ -2078,12 +2080,38 @@ function feSaveWorkspace() {
 }
 
 // Merge output_files returned by the API into the workspace, then re-render.
-function feMergeFiles(outputFiles) {
+// targetLang must be passed from the runCode() closure so that a language
+// switch mid-run cannot redirect the files into the wrong workspace.
+function feMergeFiles(outputFiles, targetLang) {
+    const tLang = targetLang ?? feWorkspaceLang;
+
+    // Load the target workspace fresh from storage — it may differ from
+    // feWorkspace if the user switched languages while the job was running.
+    let ws;
+    try {
+        const raw = localStorage.getItem(`piston_ws_${tLang}`);
+        const parsed = raw ? JSON.parse(raw) : {};
+        ws = (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+            ? parsed : {};
+    } catch (_) { ws = {}; }
+
     for (const f of outputFiles) {
-        feWorkspace[f.name] = f;
+        ws[f.name] = f;
     }
-    feSaveWorkspace();
-    renderFileExplorer();
+
+    try {
+        if (Object.keys(ws).length > 0) {
+            localStorage.setItem(`piston_ws_${tLang}`, JSON.stringify(ws));
+        } else {
+            localStorage.removeItem(`piston_ws_${tLang}`);
+        }
+    } catch (_) {}
+
+    // Only update in-memory state and re-render if still on the same language
+    if (feWorkspaceLang === tLang) {
+        feWorkspace = ws;
+        renderFileExplorer();
+    }
 }
 
 // Remove one workspace file by its rendered index, save, and re-render.
