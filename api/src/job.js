@@ -442,10 +442,15 @@ class Job {
         if (this.runtime.compiled) {
             this.logger.debug('Compiling');
             emit_event_bus_stage('compile');
+            // Exclude workspace data files from compile args — they're in the
+            // sandbox so user code can read them, but they're not source files.
+            const compile_source_files = code_files.filter(
+                f => !this.workspace_files.has(f.name)
+            );
             compile = await this.safe_call(
                 box,
                 'compile',
-                code_files.map(x => x.name),
+                compile_source_files.map(x => x.name),
                 this.timeouts.compile,
                 this.cpu_times.compile,
                 this.memory_limits.compile,
