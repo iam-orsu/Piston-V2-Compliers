@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
-# Put instructions to run the runtime
-mv $1 $1.java
-filename=$1.java
+# Run the already-compiled .class file from the compile stage
+classname="${1%.java}"
 shift
-java $filename "$@"
+java "$classname" "$@"
