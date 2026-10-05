@@ -166,7 +166,7 @@ wait_for_api() {
             return 0
         fi
         sleep 2
-        ((attempts++))
+        attempts=$((attempts + 1))
     done
     warn "API did not become ready in 180s. Run: ./deploy.sh logs api1"
     return 1
@@ -287,7 +287,7 @@ auto_install_runtimes() {
         echo ""
         echo -e "${CYAN}  Restarting API replicas to load new runtimes...${NC}"
         $DC restart api1 api2 api3 2>/dev/null || true
-        wait_for_api
+        wait_for_api || true
     fi
 
     echo ""
