@@ -51,6 +51,10 @@ DEFAULT_RUNTIMES=(
     "sqlite3="
 )
 
+# Custom AI/ML package compiled from source inside the container.
+# NOT in the remote registry — handled by build_datascience_runtime().
+DS_PKG_VERSION="3.12.0"
+
 # ── Logging ──────────────────────────────────────────────────────────────────
 log()  { echo -e "${GREEN}▶  ${NC}$*"; }
 info() { echo -e "   ${CYAN}ℹ  ${NC}$*"; }
@@ -346,6 +350,115 @@ patch_runtimes() {
     echo -e "${GREEN}${BOLD}✅  Runtime patches applied.${NC}"
 }
 
+# Build and install the python-datascience runtime inside the running container.
+# This custom package is NOT in the remote registry so install_runtime() cannot
+# be used. Python 3.12 is compiled from source and the DS library stack is
+# installed via pip. The compiled output lives in the packages volume so it
+# survives container restarts. pkg-info.json is written only after a successful
+# build so a failed build is automatically retried on the next deploy.
+build_datascience_runtime() {
+    local DS_PKG_DIR="/piston/packages/python-datascience/${DS_PKG_VERSION}"
+
+    echo ""
+    echo -e "${CYAN}${BOLD}🧪  Checking AI/ML data-science runtime...${NC}"
+
+    # Skip if pkg-info.json exists (created only after a successful build)
+    if docker exec piston_api1 test -f "${DS_PKG_DIR}/pkg-info.json" 2>/dev/null; then
+        step "python-datascience ${DS_PKG_VERSION} already installed — skipping build."
+        return 0
+    fi
+
+    local src_dir="${SCRIPT_DIR}/packages/python-datascience/${DS_PKG_VERSION}"
+    if [[ ! -f "${src_dir}/build.sh" ]]; then
+        warn "python-datascience source not found at ${src_dir} — DS runtime will not be available."
+        return 1
+    fi
+
+    echo ""
+    echo -e "   ${YELLOW}${BOLD}python-datascience ${DS_PKG_VERSION} is not installed.${NC}"
+    echo -e "   ${CYAN}Bundles: NumPy · Pandas · Matplotlib · Seaborn · scikit-learn · SciPy · Pillow · Statsmodels · Plotly${NC}"
+    echo ""
+    echo -e "   ${YELLOW}⏱  Building Python 3.12 from source — one-time setup, expect 20-35 minutes.${NC}"
+    echo ""
+
+    # ── Step 1: Install build toolchain inside the container ─────────────────
+    # These packages are installed into the container's writable layer.
+    # They are only needed during this initial build; the compiled Python
+    # installation is stored in the packages volume and persists across restarts.
+    step "Installing Python 3.12 build dependencies in container..."
+    docker exec piston_api1 bash -c "
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq 2>&1 | tail -2
+        apt-get install -y --no-install-recommends \
+            curl \
+            zlib1g-dev \
+            libssl-dev \
+            libffi-dev \
+            libbz2-dev \
+            liblzma-dev \
+            libsqlite3-dev \
+            pkg-config \
+        2>&1 | tail -5
+    " || { warn "Failed to install build deps — check apt sources inside container"; return 1; }
+    step "Build dependencies ready."
+
+    # ── Step 2: Copy package source into the container volume ────────────────
+    step "Copying package source files..."
+    docker exec piston_api1 mkdir -p "${DS_PKG_DIR}"
+
+    for f in build.sh run environment metadata.json; do
+        docker cp "${src_dir}/${f}" "piston_api1:${DS_PKG_DIR}/${f}" \
+            || { warn "Failed to copy ${f} — missing from packages/python-datascience/${DS_PKG_VERSION}/"; return 1; }
+    done
+
+    # Strip Windows CRLF line endings (files may be checked out on Windows)
+    docker exec piston_api1 bash -c "
+        sed -i 's/\r//' \
+            '${DS_PKG_DIR}/build.sh' \
+            '${DS_PKG_DIR}/run' \
+            '${DS_PKG_DIR}/environment'
+    " 2>/dev/null || true
+
+    docker exec piston_api1 chmod +x \
+        "${DS_PKG_DIR}/build.sh" \
+        "${DS_PKG_DIR}/run" \
+        "${DS_PKG_DIR}/environment"
+    step "Source files ready."
+
+    # ── Step 3: Compile Python and install DS library stack ──────────────────
+    echo ""
+    echo -e "   ${CYAN}▶  Running build.sh — compiling Python 3.12 and pip-installing DS stack...${NC}"
+    echo ""
+
+    if docker exec piston_api1 bash -c "cd '${DS_PKG_DIR}' && bash ./build.sh"; then
+        step "Python 3.12 + DS stack built successfully."
+    else
+        warn "python-datascience build FAILED."
+        warn "To debug: docker exec -it piston_api1 bash"
+        warn "          then: cd ${DS_PKG_DIR} && bash ./build.sh"
+        return 1
+    fi
+
+    # ── Step 4: Write pkg-info.json (marks runtime as ready for loading) ─────
+    # runtime.js scans each package dir for pkg-info.json on startup.
+    # Writing it only here ensures a partially-built package is never loaded.
+    step "Writing pkg-info.json..."
+    docker exec piston_api1 node -e "
+const fs = require('fs');
+const meta = JSON.parse(fs.readFileSync('${DS_PKG_DIR}/metadata.json', 'utf8'));
+meta.build_platform = 'docker-debian';
+fs.writeFileSync('${DS_PKG_DIR}/pkg-info.json', JSON.stringify(meta, null, 2));
+process.stdout.write('pkg-info.json written\n');
+" || { warn "Failed to write pkg-info.json — check node is available in container"; return 1; }
+
+    # ── Step 5: Restart API replicas so they pick up the new runtime ─────────
+    echo ""
+    echo -e "${GREEN}${BOLD}✅  python-datascience ${DS_PKG_VERSION} installed.${NC}"
+    echo -e "${CYAN}   Restarting API replicas to load the new runtime...${NC}"
+    $DC restart api1 api2 api3 2>/dev/null || true
+    wait_for_api
+}
+
 # ── Commands ─────────────────────────────────────────────────────────────────
 build_sandbox_image() {
     echo -e "${CYAN}${BOLD}🔒  Building hardened sandbox image...${NC}"
@@ -377,6 +490,7 @@ cmd_start() {
     if wait_for_api; then
         auto_install_runtimes
         patch_runtimes
+        build_datascience_runtime
     fi
 
     print_ready_banner
@@ -451,6 +565,7 @@ cmd_restart() {
     if wait_for_api; then
         auto_install_runtimes
         patch_runtimes
+        build_datascience_runtime
     fi
     print_ready_banner
 }
@@ -473,6 +588,15 @@ cmd_status() {
     echo ""
     echo -e "   ${CYAN}ℹ  3 API replicas running — capacity: ~2300 concurrent students${NC}"
     echo -e "   ${CYAN}ℹ  Per-job memory limit: 256 MB · Run timeout: 15s${NC}"
+    echo ""
+
+    local ds_dir="/piston/packages/python-datascience/${DS_PKG_VERSION}"
+    if docker exec piston_api1 test -f "${ds_dir}/pkg-info.json" 2>/dev/null; then
+        echo -e "   ${GREEN}✅  AI/ML runtime: python-datascience ${DS_PKG_VERSION} installed${NC}"
+    else
+        echo -e "   ${YELLOW}⚠  AI/ML runtime: python-datascience not yet built${NC}"
+        echo -e "      Run ./deploy.sh restart to trigger the one-time build (20-35 min)."
+    fi
     echo ""
 }
 
@@ -541,6 +665,11 @@ cmd_help() {
     echo -e "  ${CYAN}install${NC} <lang>      Install a specific language runtime"
     echo -e "  ${CYAN}list${NC}                List all available packages from registry"
     echo -e "  ${CYAN}patch${NC}               Re-apply runtime script patches (e.g. Java multi-file)"
+    echo ""
+    echo -e "${BOLD}AI/ML / Data Science runtime:${NC}"
+    echo -e "  python-datascience is compiled from source on first start/restart."
+    echo -e "  One-time build — 20-35 min. Subsequent restarts skip it (already built)."
+    echo -e "  Libraries: NumPy · Pandas · Matplotlib · Seaborn · scikit-learn · SciPy · Pillow · Statsmodels · Plotly"
     echo ""
     echo -e "${BOLD}Examples:${NC}"
     echo -e "  ./deploy.sh start"

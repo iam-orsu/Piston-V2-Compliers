@@ -18,6 +18,7 @@
 10. [Security Rules](#security-rules)
 11. [Limits & Rate Limits](#limits--rate-limits)
 12. [PistonSession — JS Client Class](#pistonsession--js-client-class)
+13. [AI/ML / Data Science Lab](#aiml--data-science-lab)
 
 ---
 
@@ -769,3 +770,232 @@ Returns `503` with `"status": "degraded"` when the queue is at capacity.
 ---
 
 > Full API reference: [`docs/api-v2.md`](docs/api-v2.md)
+
+---
+
+## AI/ML / Data Science Lab
+
+The `python-datascience` runtime is a custom Python 3.12 build with a pre-installed AI/ML/DS library stack. Students select the libraries they need, provision a workspace, write Python code, and receive rendered charts back as image files — no `pip install` required.
+
+### Runtime details
+
+| Field | Value |
+|---|---|
+| Language identifier | `python-datascience` |
+| Aliases | `python-ds`, `py-ds`, `pyds` |
+| Version | `3.12.0` |
+| Run memory limit | 1 GB |
+| Run timeout | 30 s |
+| Compile stage | none (interpreted) |
+| Max output file size | 64 MB |
+
+### Pre-installed libraries
+
+| Library | Import name | Purpose |
+|---|---|---|
+| NumPy | `numpy` | Numerical arrays and linear algebra |
+| Pandas | `pandas` | DataFrames, CSV/Excel I/O |
+| Matplotlib | `matplotlib` | 2D plotting (headless — `fig.savefig()`, not `plt.show()`) |
+| Seaborn | `seaborn` | Statistical data visualisation |
+| scikit-learn | `sklearn` | Machine learning models and preprocessing |
+| SciPy | `scipy` | Scientific computing, statistics |
+| Pillow | `PIL` | Image loading and manipulation |
+| Statsmodels | `statsmodels` | Statistical modelling and tests |
+| Plotly | `plotly` | Interactive charts (export as PNG/HTML) |
+| openpyxl / xlrd | — | Excel file support for Pandas |
+| sympy | `sympy` | Symbolic mathematics |
+| cryptography / PyCryptodome | — | Crypto utilities |
+
+### Critical: headless rendering
+
+The sandbox has no display server. Matplotlib must write to a file — `plt.show()` will hang:
+
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+x = np.linspace(0, 2 * np.pi, 100)
+fig, ax = plt.subplots()
+ax.plot(x, np.sin(x))
+ax.set_title('Sine wave')
+
+fig.savefig('sine.png', dpi=100, bbox_inches='tight')  # correct
+# plt.show()  -- WRONG: no display server in sandbox
+```
+
+The `MPLBACKEND=Agg` environment variable is set automatically by the runtime — you do not need to configure it.
+
+### HTTP example — run code and receive an image
+
+```js
+const response = await fetch('/api/v2/execute', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    language: 'python-datascience',
+    version:  '*',
+    files: [
+      {
+        name: 'main.py',
+        content: `
+import pandas as pd
+import matplotlib.pyplot as plt
+
+df = pd.read_csv('data.csv')
+fig, ax = plt.subplots()
+ax.scatter(df['age'], df['score'], c='steelblue', alpha=0.7)
+ax.set_xlabel('Age'); ax.set_ylabel('Score')
+ax.set_title('Age vs Score')
+fig.savefig('chart.png', dpi=100, bbox_inches='tight')
+print(f"Rows: {len(df)}")
+`.trim(),
+      },
+      { name: 'data.csv', content: 'age,score\n20,85\n22,90\n21,78\n23,92' },
+    ],
+    workspace_files: ['data.csv'],
+  }),
+});
+
+const result = await response.json();
+console.log(result.run.stdout);        // "Rows: 4"
+
+for (const file of result.output_files) {
+  if (file.name.endsWith('.png')) {
+    const img = document.createElement('img');
+    img.src = `data:image/png;base64,${file.content}`;   // file.encoding === 'base64'
+    document.body.appendChild(img);
+  }
+}
+```
+
+> **`workspace_files`** must list every CSV (or data file). This tells the engine these are data files, not source files — they are written to the sandbox but not passed as arguments to compilers.
+
+### WebSocket example — live output + image
+
+```js
+const ws = new WebSocket('ws://localhost/api/v2/connect');
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    type:    'init',
+    language: 'python-datascience',
+    version:  '*',
+    files: [
+      {
+        name: 'main.py',
+        content: `
+import pandas as pd, matplotlib.pyplot as plt
+df = pd.read_csv('students.csv')
+fig, ax = plt.subplots()
+ax.scatter(df['age'], df['score'])
+ax.set_title('Students')
+fig.savefig('plot.png', dpi=100, bbox_inches='tight')
+print('done')
+`.trim(),
+      },
+      { name: 'students.csv', content: 'age,score\n20,85\n22,90' },
+    ],
+    workspace_files: ['students.csv'],
+    stdin: '',
+    args: [],
+  }));
+};
+
+ws.onmessage = ({ data }) => {
+  const msg = JSON.parse(data);
+
+  if (msg.type === 'data') {
+    // Live stdout/stderr — stream to terminal
+    process.stdout.write(msg.data);
+  }
+
+  if (msg.type === 'output_files') {
+    for (const file of msg.files) {
+      if (/\.(png|jpg|svg)$/i.test(file.name)) {
+        // Decode base64 image and display it
+        const img = document.createElement('img');
+        img.src = `data:image/png;base64,${file.content}`;
+        document.getElementById('output-panel').appendChild(img);
+      }
+    }
+  }
+};
+```
+
+### Injecting multiple CSV files
+
+Send all CSV files in `files[]` and list their names in `workspace_files[]`. The Python code reads them with `pd.read_csv()` using the filename you gave them:
+
+```json
+{
+  "language": "python-datascience",
+  "version": "*",
+  "files": [
+    { "name": "main.py",     "content": "import pandas as pd\ndf=pd.read_csv('sales.csv')\nprint(df.describe())" },
+    { "name": "sales.csv",   "content": "month,revenue\nJan,10000\nFeb,12000" },
+    { "name": "targets.csv", "content": "month,target\nJan,9500\nFeb,11000" }
+  ],
+  "workspace_files": ["sales.csv", "targets.csv"]
+}
+```
+
+### Receiving and displaying output images
+
+`output_files[]` contains every file created or modified during the run. Image files are returned as base64:
+
+```js
+// Generic handler — works with HTTP response and WebSocket output_files message
+function renderOutputFiles(files) {
+  const IMAGE_EXTS = /\.(png|jpg|jpeg|svg|gif)$/i;
+  for (const file of files) {
+    if (!IMAGE_EXTS.test(file.name)) continue;
+
+    const img = document.createElement('img');
+    if (file.encoding === 'base64') {
+      const mime = file.name.endsWith('.svg') ? 'image/svg+xml' : 'image/png';
+      img.src = `data:${mime};base64,${file.content}`;
+    } else {
+      img.src = `data:image/svg+xml,${encodeURIComponent(file.content)}`;
+    }
+    img.alt = file.name;
+    img.title = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+
+    const link = document.createElement('a');
+    link.href = img.src;
+    link.download = file.name;
+    link.appendChild(img);
+    document.getElementById('output-panel').appendChild(link);
+  }
+}
+```
+
+### Resource limits for DS workloads
+
+DS jobs have higher limits than the default to accommodate model training and large datasets:
+
+| Resource | Default | python-datascience |
+|---|---|---|
+| Run memory | 256 MB | **1 GB** |
+| Run wall time | 15 s | **30 s** |
+| Run CPU time | 15 s | **30 s** |
+| Compile memory | 512 MB | unlimited |
+| Max output file | 1 MB | **64 MB** |
+
+These overrides are declared in `packages/python-datascience/3.12.0/metadata.json` and applied automatically — no per-request fields needed.
+
+### Deployment — automatic build on `./deploy.sh restart`
+
+The `python-datascience` runtime is not in the remote package registry. `deploy.sh` compiles it from source inside the running API container on first start or restart:
+
+```bash
+./deploy.sh restart   # builds python-datascience on first run (one-time, 20-35 min)
+                      # subsequent restarts detect pkg-info.json and skip the build
+```
+
+Build status:
+
+```bash
+./deploy.sh status    # shows "AI/ML runtime: installed" or "not yet built"
+```
+
+The compiled Python installation lives in the `data/piston/packages/` Docker volume and survives container restarts and rebuilds.
