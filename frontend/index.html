@@ -852,6 +852,249 @@
             border-top: 1px solid var(--border);
             justify-content: flex-end;
         }
+
+        /* ── DS Lab (AI/ML/DS) ───────────────────────────────────────────────── */
+        .ds-studio {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: row;
+            overflow: hidden;
+        }
+
+        .ds-sidebar {
+            width: 220px;
+            min-width: 180px;
+            flex-shrink: 0;
+            background: var(--bg-1);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .ds-sidebar-header {
+            padding: 10px 14px 8px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .ds-lib-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            padding: 8px 8px 4px;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+
+        .ds-lib-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 8px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: background 0.12s;
+        }
+        .ds-lib-row:hover { background: var(--bg-2); }
+        .ds-lib-row input[type="checkbox"] {
+            accent-color: var(--accent);
+            width: 14px; height: 14px;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+        .ds-lib-label { font-size: 13px; color: var(--text); user-select: none; }
+
+        .ds-provision-btn {
+            margin: 6px 10px 8px;
+            padding: 8px 14px;
+            background: var(--green-dark);
+            border: 1px solid rgba(63,185,80,0.4);
+            color: #fff;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+            flex-shrink: 0;
+        }
+        .ds-provision-btn:hover { background: #2ea043; }
+
+        .ds-sidebar-section {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            padding: 8px 14px 4px;
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .ds-csv-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 4px 10px 8px;
+        }
+
+        .ds-csv-empty {
+            font-size: 12px;
+            color: var(--text-muted);
+            padding: 6px 4px;
+            display: block;
+        }
+
+        .ds-csv-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 8px;
+            border-radius: var(--radius);
+            font-size: 12px;
+            color: var(--text-dim);
+            background: var(--bg-2);
+            margin-bottom: 3px;
+            min-width: 0;
+        }
+
+        .ds-csv-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-family: var(--mono);
+            font-size: 11px;
+        }
+
+        .ds-csv-icon { flex-shrink: 0; }
+
+        .ds-csv-rm {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 11px;
+            padding: 0 2px;
+            border-radius: 3px;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+        .ds-csv-rm:hover { color: var(--red); background: rgba(248,81,73,0.1); }
+
+        .ds-editor-panel {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border);
+            position: relative;
+        }
+
+        #ds-editor { flex: 1; min-height: 0; }
+
+        .ds-provision-hint {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            background: var(--bg-0);
+            z-index: 5;
+            color: var(--text-dim);
+            font-size: 14px;
+            text-align: center;
+            line-height: 1.6;
+            pointer-events: none;
+        }
+        .ds-provision-hint-icon { font-size: 40px; opacity: 0.45; }
+
+        .ds-terminal-panel {
+            width: 380px;
+            min-width: 260px;
+            max-width: 620px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-0);
+        }
+
+        #ds-term-pre {
+            position: absolute;
+            inset: 0;
+            overflow-y: auto;
+            padding: 10px 12px;
+            font-family: var(--mono);
+            font-size: 12.5px;
+            line-height: 1.55;
+            color: var(--text);
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: var(--bg-0);
+            margin: 0;
+        }
+
+        .ds-output-pane {
+            position: absolute;
+            inset: 0;
+            overflow-y: auto;
+            padding: 12px;
+            display: none;
+            flex-direction: column;
+            gap: 16px;
+            background: var(--bg-0);
+        }
+
+        #ds-stats-pane {
+            position: absolute;
+            inset: 0;
+        }
+
+        .ds-output-empty {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 13px;
+            margin: auto;
+            padding: 32px 16px;
+            align-self: center;
+        }
+
+        .ds-output-img-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            background: var(--bg-1);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px;
+        }
+
+        .ds-output-img-label {
+            font-size: 11px;
+            color: var(--text-dim);
+            font-family: var(--mono);
+        }
+
+        .ds-output-img {
+            max-width: 100%;
+            border-radius: 4px;
+            display: block;
+        }
+
+        .ds-output-dl {
+            font-size: 11px;
+            color: var(--accent);
+            text-decoration: none;
+            align-self: flex-start;
+        }
+        .ds-output-dl:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -867,6 +1110,7 @@
     <div class="mode-toggle">
         <button class="mode-btn active" id="btn-mode-ide" title="Multi-language code IDE">IDE</button>
         <button class="mode-btn" id="btn-mode-sql" title="SQL Studio — persistent SQLite sessions">SQL</button>
+        <button class="mode-btn" id="btn-mode-ds" title="AI/ML/DS Lab — Python data science environment">AI/ML</button>
     </div>
     <div class="sep"></div>
     <!-- IDE controls (shown when in IDE mode) -->
@@ -912,6 +1156,31 @@
         <button class="icon-btn" id="sql-clear-btn">Clear</button>
         <div class="spacer"></div>
         <span class="version-badge" style="color:var(--accent)">SQLite3</span>
+    </div>
+    <!-- DS Lab controls (shown when in DS mode) -->
+    <div class="controls" id="ds-controls" style="display:none">
+        <button class="run-btn" id="ds-run-btn">
+            <svg class="run-icon" width="13" height="13" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z"/>
+            </svg>
+            <div class="spinner"></div>
+            Run
+        </button>
+        <button class="kill-btn" id="ds-kill-btn">
+            <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+            Stop
+        </button>
+        <button class="icon-btn" id="ds-upload-btn">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            Upload CSV
+        </button>
+        <input type="file" id="ds-csv-input" accept=".csv" multiple style="display:none">
+        <div class="spacer"></div>
+        <span class="version-badge" style="color:var(--purple)">Python DS</span>
     </div>
 </header>
 
@@ -1011,6 +1280,49 @@
         </div>
 
     </div>
+</div>
+
+<!-- DS Lab (hidden until DS mode is active) -->
+<div class="ds-studio" id="ds-studio" style="display:none">
+
+    <!-- Left: Library selector + CSV list -->
+    <div class="ds-sidebar">
+        <div class="ds-sidebar-header">Libraries</div>
+        <div class="ds-lib-grid" id="ds-lib-grid"></div>
+        <button class="ds-provision-btn" id="ds-provision-btn">⚡ Provision Workspace</button>
+        <div class="ds-sidebar-section">CSV Files</div>
+        <div class="ds-csv-list" id="ds-csv-list">
+            <span class="ds-csv-empty">No CSV files uploaded</span>
+        </div>
+    </div>
+
+    <!-- Center: Monaco editor -->
+    <div class="ds-editor-panel" id="ds-editor-panel">
+        <div class="ds-provision-hint" id="ds-provision-hint">
+            <div class="ds-provision-hint-icon">🧪</div>
+            <span>Select libraries and click<br><strong>Provision Workspace</strong> to begin</span>
+        </div>
+        <div id="ds-editor"></div>
+    </div>
+
+    <!-- Right: Terminal / Output / Stats -->
+    <div class="ds-terminal-panel">
+        <div class="terminal-titlebar">
+            <button class="term-tab active" id="ds-tab-terminal-btn">Terminal</button>
+            <button class="term-tab" id="ds-tab-output-btn">Output</button>
+            <button class="term-tab" id="ds-tab-stats-btn">Stats</button>
+            <div class="tab-spacer"></div>
+            <button class="clear-btn" id="ds-clear-btn">Clear</button>
+        </div>
+        <div class="terminal-body">
+            <pre id="ds-term-pre"></pre>
+            <div class="ds-output-pane" id="ds-output-pane">
+                <span class="ds-output-empty">Run code that saves image files (e.g. plt.savefig) to see them here.</span>
+            </div>
+            <div class="stats-pane" id="ds-stats-pane"></div>
+        </div>
+    </div>
+
 </div>
 
 <!-- Upload Modal -->
@@ -1793,39 +2105,397 @@ function initSqlResize() {
 // ── Mode switch ────────────────────────────────────────────────────────────
 
 function switchMode(mode) {
-    const ideMain    = document.getElementById('ide-main');
-    const sqlStudio  = document.getElementById('sql-studio');
-    const ideCtrl    = document.getElementById('ide-controls');
-    const sqlCtrl    = document.getElementById('sql-controls');
-    const btnIde     = document.getElementById('btn-mode-ide');
-    const btnSql     = document.getElementById('btn-mode-sql');
+    const ideMain   = document.getElementById('ide-main');
+    const sqlStudio = document.getElementById('sql-studio');
+    const dsStudio  = document.getElementById('ds-studio');
+    const ideCtrl   = document.getElementById('ide-controls');
+    const sqlCtrl   = document.getElementById('sql-controls');
+    const dsCtrl    = document.getElementById('ds-controls');
+    const btnIde    = document.getElementById('btn-mode-ide');
+    const btnSql    = document.getElementById('btn-mode-sql');
+    const btnDs     = document.getElementById('btn-mode-ds');
+
+    // Hide everything first
+    ideMain.style.display   = 'none';
+    sqlStudio.style.display = 'none';
+    dsStudio.style.display  = 'none';
+    ideCtrl.style.display   = 'none';
+    sqlCtrl.style.display   = 'none';
+    dsCtrl.style.display    = 'none';
+    [btnIde, btnSql, btnDs].forEach(b => b && b.classList.remove('active'));
 
     if (mode === 'sql') {
-        ideMain.style.display   = 'none';
         sqlStudio.style.display = 'flex';
-        ideCtrl.style.display   = 'none';
         sqlCtrl.style.display   = 'flex';
-        btnIde.classList.remove('active');
         btnSql.classList.add('active');
         setStatus('SQL Studio', 'Ready — pre-loaded: sales · Ctrl+Enter to run', 'default');
-        // Show the sales schema panel on first open (before any query is run).
         if (sqlSchema.length === 0) {
             sqlSchema = SALES_SEED_SCHEMA;
             renderSqlSchema(sqlSchema);
         }
         setTimeout(() => { try { sqlEditor && sqlEditor.layout(); } catch(_) {} }, 60);
+    } else if (mode === 'ds') {
+        dsStudio.style.display = 'flex';
+        dsCtrl.style.display   = 'flex';
+        btnDs.classList.add('active');
+        setStatus('Python DS', 'Select libraries and provision workspace', 'default');
+        dsRenderLibGrid();
+        setTimeout(() => { try { dsEditor && dsEditor.layout(); } catch(_) {} }, 60);
     } else {
-        ideMain.style.display   = 'flex';
-        sqlStudio.style.display = 'none';
-        ideCtrl.style.display   = 'flex';
-        sqlCtrl.style.display   = 'none';
+        // Default: IDE mode
+        ideMain.style.display = 'flex';
+        ideCtrl.style.display = 'flex';
         btnIde.classList.add('active');
-        btnSql.classList.remove('active');
         const sel  = document.getElementById('lang-select');
         const lang = sel ? sel.value : 'Piston IDE';
         setStatus(lang || 'Piston IDE', 'Ready — Ctrl+Enter to run', 'default');
         setTimeout(() => { try { fitAddon && fitAddon.fit(); } catch(_) {} }, 60);
     }
+}
+
+// ── DS Lab ─────────────────────────────────────────────────────────────────
+
+const DS_RUNTIME = 'python-datascience';
+const DS_LIBS = [
+    { id: 'numpy',       label: 'NumPy',       checked: true  },
+    { id: 'pandas',      label: 'Pandas',      checked: true  },
+    { id: 'matplotlib',  label: 'Matplotlib',  checked: true  },
+    { id: 'seaborn',     label: 'Seaborn',     checked: false },
+    { id: 'scipy',       label: 'SciPy',       checked: false },
+    { id: 'sklearn',     label: 'scikit-learn',checked: false },
+    { id: 'pillow',      label: 'Pillow',      checked: false },
+    { id: 'statsmodels', label: 'Statsmodels', checked: false },
+    { id: 'plotly',      label: 'Plotly',      checked: false },
+];
+
+// In-memory CSV store — never written to localStorage; gone on page reload
+let dsFiles       = {};
+let dsRunning     = false;
+let dsActiveWs    = null;
+let dsKilled      = false;
+let dsEditor      = null;
+let dsProvisioned = false;
+
+function dsRenderLibGrid() {
+    const grid = document.getElementById('ds-lib-grid');
+    if (!grid || grid.dataset.rendered) return;
+    grid.dataset.rendered = '1';
+    DS_LIBS.forEach(lib => {
+        const row = document.createElement('label');
+        row.className = 'ds-lib-row';
+        row.innerHTML = `
+            <input type="checkbox" id="ds-lib-${lib.id}"${lib.checked ? ' checked' : ''}>
+            <span class="ds-lib-label">${lib.label}</span>
+        `;
+        grid.appendChild(row);
+    });
+}
+
+function dsGetSelectedLibs() {
+    return DS_LIBS.map(l => l.id).filter(id => {
+        const cb = document.getElementById(`ds-lib-${id}`);
+        return cb && cb.checked;
+    });
+}
+
+function dsStripAnsi(s) {
+    return s.replace(/\x1b\[[0-9;]*[mGKHFJA-Za-z]/g, '');
+}
+
+function dsClearTerminal() {
+    const el = document.getElementById('ds-term-pre');
+    if (el) el.textContent = '';
+}
+
+function dsWriteTerminal(text) {
+    const el = document.getElementById('ds-term-pre');
+    if (!el) return;
+    el.textContent += dsStripAnsi(text);
+    el.scrollTop = el.scrollHeight;
+}
+
+function dsShowTab(tab) {
+    const termPre  = document.getElementById('ds-term-pre');
+    const outPane  = document.getElementById('ds-output-pane');
+    const statPane = document.getElementById('ds-stats-pane');
+    if (termPre)  termPre.style.display  = tab === 'terminal' ? 'block' : 'none';
+    if (outPane)  outPane.style.display  = tab === 'output'   ? 'flex'  : 'none';
+    if (statPane) statPane.style.display = tab === 'stats'    ? 'block' : 'none';
+    ['terminal', 'output', 'stats'].forEach(t => {
+        const btn = document.getElementById(`ds-tab-${t}-btn`);
+        if (btn) btn.classList.toggle('active', t === tab);
+    });
+}
+
+function dsSetRunning(running) {
+    dsRunning = running;
+    const runBtn  = document.getElementById('ds-run-btn');
+    const killBtn = document.getElementById('ds-kill-btn');
+    if (runBtn)  { runBtn.disabled = running; runBtn.classList.toggle('loading', running); }
+    if (killBtn) { killBtn.classList.toggle('visible', running); }
+}
+
+function dsRenderOutputPanel(files) {
+    const pane = document.getElementById('ds-output-pane');
+    if (!pane) return;
+    const empty = pane.querySelector('.ds-output-empty');
+    if (empty) empty.remove();
+
+    const imageExts = /\.(png|jpg|jpeg|gif|svg|webp)$/i;
+    const imageFiles = files.filter(f => imageExts.test(f.name));
+    if (imageFiles.length === 0) return;
+
+    imageFiles.forEach(f => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'ds-output-img-wrapper';
+
+        const label = document.createElement('span');
+        label.className = 'ds-output-img-label';
+        label.textContent = f.name;
+
+        const img = document.createElement('img');
+        img.className = 'ds-output-img';
+        const mime = /\.svg$/i.test(f.name) ? 'image/svg+xml'
+                   : /\.gif$/i.test(f.name) ? 'image/gif'
+                   : /\.jpe?g$/i.test(f.name) ? 'image/jpeg'
+                   : 'image/png';
+        img.src = `data:${mime};base64,${f.content}`;
+        img.alt = f.name;
+
+        const dl = document.createElement('a');
+        dl.className = 'ds-output-dl';
+        dl.href = img.src;
+        dl.download = f.name;
+        dl.textContent = '⬇ Download';
+
+        wrapper.appendChild(label);
+        wrapper.appendChild(img);
+        wrapper.appendChild(dl);
+        pane.appendChild(wrapper);
+    });
+
+    dsShowTab('output');
+}
+
+function dsClearOutputPanel() {
+    const pane = document.getElementById('ds-output-pane');
+    if (!pane) return;
+    pane.innerHTML = '<span class="ds-output-empty">Run code that saves image files (e.g. plt.savefig) to see them here.</span>';
+}
+
+function dsRenderCsvList() {
+    const list = document.getElementById('ds-csv-list');
+    if (!list) return;
+    list.innerHTML = '';
+    const keys = Object.keys(dsFiles);
+    if (keys.length === 0) {
+        list.innerHTML = '<span class="ds-csv-empty">No CSV files uploaded</span>';
+        return;
+    }
+    keys.forEach(name => {
+        const safe = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const row = document.createElement('div');
+        row.className = 'ds-csv-row';
+        row.innerHTML = `
+            <span class="ds-csv-icon">📄</span>
+            <span class="ds-csv-name" title="${safe}">${safe}</span>
+            <button class="ds-csv-rm" title="Remove">✕</button>
+        `;
+        row.querySelector('.ds-csv-rm').addEventListener('click', () => {
+            delete dsFiles[name];
+            dsRenderCsvList();
+        });
+        list.appendChild(row);
+    });
+}
+
+function dsUploadCsv() {
+    document.getElementById('ds-csv-input').click();
+}
+
+function dsHandleCsvFiles(fileList) {
+    Array.from(fileList).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            dsFiles[file.name] = { name: file.name, content: ev.target.result, encoding: 'utf8' };
+            dsRenderCsvList();
+        };
+        reader.readAsText(file);
+    });
+}
+
+function dsGetStarterCode(libs) {
+    const lines = ['# AI/ML Lab'];
+    if (libs.includes('numpy'))       lines.push('import numpy as np');
+    if (libs.includes('pandas'))      lines.push('import pandas as pd');
+    if (libs.includes('matplotlib'))  lines.push('import matplotlib.pyplot as plt');
+    if (libs.includes('seaborn'))     lines.push('import seaborn as sns');
+    if (libs.includes('scipy'))       lines.push('from scipy import stats');
+    if (libs.includes('sklearn'))     lines.push('from sklearn.model_selection import train_test_split');
+    if (libs.includes('pillow'))      lines.push('from PIL import Image');
+    if (libs.includes('statsmodels')) lines.push('import statsmodels.api as sm');
+    if (libs.includes('plotly'))      lines.push('import plotly.express as px');
+    lines.push('');
+
+    const csvNames = Object.keys(dsFiles);
+    if (csvNames.length > 0 && libs.includes('pandas')) {
+        lines.push(`df = pd.read_csv('${csvNames[0]}')`);
+        lines.push('print(df.head())');
+        lines.push('');
+    }
+
+    if (libs.includes('matplotlib')) {
+        lines.push('fig, ax = plt.subplots(figsize=(8, 5))');
+        lines.push("ax.plot([1, 2, 3, 4], [1, 4, 9, 16], marker='o')");
+        lines.push("ax.set_title('Sample Plot')");
+        lines.push("fig.savefig('plot.png', dpi=100, bbox_inches='tight')");
+        lines.push("print('Saved plot.png')");
+    }
+
+    return lines.join('\n');
+}
+
+function dsProvision() {
+    const libs = dsGetSelectedLibs();
+    if (libs.length === 0) {
+        alert('Select at least one library first.');
+        return;
+    }
+    dsProvisioned = true;
+    const code = dsGetStarterCode(libs);
+
+    const hint = document.getElementById('ds-provision-hint');
+    if (hint) hint.style.display = 'none';
+
+    if (!dsEditor) {
+        require(['vs/editor/editor.main'], function() {
+            dsEditor = monaco.editor.create(document.getElementById('ds-editor'), {
+                value: code,
+                language: 'python',
+                theme: 'vs-dark',
+                fontSize: 13,
+                fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--mono'),
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                lineNumbers: 'on',
+                automaticLayout: true,
+                tabSize: 4,
+                insertSpaces: true,
+                cursorSmoothCaretAnimation: 'on',
+            });
+            dsEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, dsRunCode);
+        });
+    } else {
+        dsEditor.setValue(code);
+    }
+
+    const btn = document.getElementById('ds-provision-btn');
+    if (btn) btn.textContent = '⚡ Re-provision';
+    setStatus('Python DS', `Ready — ${libs.join(', ')}`, 'default');
+}
+
+async function dsRunCode() {
+    if (dsRunning || !dsEditor || !dsProvisioned) return;
+
+    const rt = runtimesByLang[DS_RUNTIME];
+    if (!rt) {
+        dsShowTab('terminal');
+        dsWriteTerminal('[Error] python-datascience runtime not installed on this server.\nAsk your admin to build and install the package.\n');
+        setStatus('Python DS', 'Runtime missing', 'error');
+        return;
+    }
+
+    const code    = dsEditor.getValue();
+    const csvList = Object.values(dsFiles);
+
+    dsClearTerminal();
+    dsClearOutputPanel();
+    dsShowTab('terminal');
+    dsSetRunning(true);
+    dsKilled = false;
+    setStatus('Python DS', 'Running...', 'running');
+
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${wsProto}//${location.host}/api/v2/connect`);
+    dsActiveWs = ws;
+
+    let runStats = null;
+
+    ws.onopen = () => {
+        ws.send(JSON.stringify({
+            type:            'init',
+            language:        DS_RUNTIME,
+            version:         rt.version,
+            files: [
+                { name: 'main.py', content: code },
+                ...csvList.map(f => ({ name: f.name, content: f.content, encoding: f.encoding || 'utf8' })),
+            ],
+            workspace_files: csvList.map(f => f.name),
+            args:            [],
+            stdin:           '',
+        }));
+    };
+
+    ws.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch(_) { return; }
+        switch (msg.type) {
+            case 'runtime':
+                dsWriteTerminal(`[${msg.language} ${msg.version}]\n`);
+                break;
+            case 'stage':
+                if (msg.stage === 'run') dsWriteTerminal('[running...]\n');
+                break;
+            case 'data':
+                dsWriteTerminal(msg.data);
+                break;
+            case 'exit':
+                if (msg.stage === 'run') runStats = msg;
+                break;
+            case 'output_files':
+                if (msg.files && msg.files.length) {
+                    feMergeFiles(msg.files, DS_RUNTIME);
+                    dsRenderOutputPanel(msg.files);
+                }
+                break;
+        }
+    };
+
+    ws.onclose = (ev) => {
+        dsActiveWs = null;
+        dsSetRunning(false);
+        if (ev.code === 4999) {
+            const exitCode = runStats?.code ?? null;
+            const ok = exitCode === 0 && !runStats?.signal;
+            dsWriteTerminal(`\n[${ok ? '✓' : '✗'} Exited ${exitCode ?? ''}]\n`);
+            setStatus('Python DS', ok ? 'Done' : `Exit ${exitCode}`, ok ? 'success' : 'error');
+        } else if (dsKilled) {
+            dsWriteTerminal('\n[Stopped]\n');
+            setStatus('Python DS', 'Stopped', 'killed');
+        } else if (ev.code === 4002) {
+            dsWriteTerminal('\n[Server busy — please retry]\n');
+            setStatus('Python DS', 'Server busy', 'error');
+        } else {
+            dsWriteTerminal(`\n[Connection closed (${ev.code})]\n`);
+            setStatus('Python DS', 'Disconnected', 'error');
+        }
+    };
+
+    ws.onerror = () => {
+        dsSetRunning(false);
+        dsWriteTerminal('\n[WebSocket error]\n');
+        setStatus('Python DS', 'Error', 'error');
+    };
+}
+
+function dsKillJob() {
+    if (dsActiveWs) {
+        dsKilled = true;
+        try { dsActiveWs.send(JSON.stringify({ type: 'signal', signal: 'SIGKILL' })); } catch(_) {}
+        try { dsActiveWs.close(); } catch(_) {}
+        dsActiveWs = null;
+    }
+    dsSetRunning(false);
 }
 
 // ── Run query ──────────────────────────────────────────────────────────────
@@ -2428,6 +3098,28 @@ document.getElementById('sql-file-input').addEventListener('change', (e) => {
     const f = e.target.files && e.target.files[0];
     document.getElementById('sql-chosen-file').textContent = f ? f.name : '';
 });
+
+// ── DS Lab event listeners ──────────────────────────────────────────────────
+
+document.getElementById('btn-mode-ds').addEventListener('click', () => switchMode('ds'));
+document.getElementById('ds-run-btn').addEventListener('click', dsRunCode);
+document.getElementById('ds-kill-btn').addEventListener('click', dsKillJob);
+document.getElementById('ds-provision-btn').addEventListener('click', dsProvision);
+document.getElementById('ds-upload-btn').addEventListener('click', dsUploadCsv);
+document.getElementById('ds-clear-btn').addEventListener('click', () => {
+    dsClearTerminal();
+    dsClearOutputPanel();
+    dsShowTab('terminal');
+});
+document.getElementById('ds-csv-input').addEventListener('change', (e) => {
+    if (e.target.files && e.target.files.length) {
+        dsHandleCsvFiles(e.target.files);
+        e.target.value = '';
+    }
+});
+document.getElementById('ds-tab-terminal-btn').addEventListener('click', () => dsShowTab('terminal'));
+document.getElementById('ds-tab-output-btn').addEventListener('click', () => dsShowTab('output'));
+document.getElementById('ds-tab-stats-btn').addEventListener('click', () => dsShowTab('stats'));
 
 // Drag-and-drop highlighting on the drop zone
 const dropZone = document.getElementById('sql-drop-zone');

@@ -1,0 +1,13 @@
+{
+    "language": "python-datascience",
+    "version": "3.12.0",
+    "aliases": ["python-ds", "py-ds", "pyds"],
+    "limit_overrides": {
+        "run_memory_limit": 1073741824,
+        "run_timeout": 30000,
+        "run_cpu_time": 30000,
+        "compile_memory_limit": -1,
+        "compile_timeout": -1,
+        "max_file_size": 67108864
+    }
+}
