@@ -1319,7 +1319,9 @@
             <div class="ds-output-pane" id="ds-output-pane">
                 <span class="ds-output-empty">Run code that saves image files (e.g. plt.savefig) to see them here.</span>
             </div>
-            <div class="stats-pane" id="ds-stats-pane"></div>
+            <div class="stats-pane" id="ds-stats-pane">
+                <span class="stat-empty">Execution stats are not collected in DS mode.</span>
+            </div>
         </div>
     </div>
 
@@ -2139,7 +2141,8 @@ function switchMode(mode) {
         dsCtrl.style.display   = 'flex';
         btnDs.classList.add('active');
         setStatus('Python DS', 'Select libraries and provision workspace', 'default');
-        dsRenderLibGrid();
+        dsRenderLibGrid();   // idempotent — renders checkboxes once
+        dsEnsureSeed();      // injects sample CSV once per page load
         setTimeout(() => { try { dsEditor && dsEditor.layout(); } catch(_) {} }, 60);
     } else {
         // Default: IDE mode
@@ -2157,24 +2160,59 @@ function switchMode(mode) {
 
 const DS_RUNTIME = 'python-datascience';
 const DS_LIBS = [
-    { id: 'numpy',       label: 'NumPy',       checked: true  },
-    { id: 'pandas',      label: 'Pandas',      checked: true  },
-    { id: 'matplotlib',  label: 'Matplotlib',  checked: true  },
-    { id: 'seaborn',     label: 'Seaborn',     checked: false },
-    { id: 'scipy',       label: 'SciPy',       checked: false },
-    { id: 'sklearn',     label: 'scikit-learn',checked: false },
-    { id: 'pillow',      label: 'Pillow',      checked: false },
-    { id: 'statsmodels', label: 'Statsmodels', checked: false },
-    { id: 'plotly',      label: 'Plotly',      checked: false },
+    { id: 'numpy',       label: 'NumPy',        checked: true  },
+    { id: 'pandas',      label: 'Pandas',        checked: true  },
+    { id: 'matplotlib',  label: 'Matplotlib',    checked: true  },
+    { id: 'seaborn',     label: 'Seaborn',       checked: false },
+    { id: 'scipy',       label: 'SciPy',         checked: false },
+    { id: 'sklearn',     label: 'scikit-learn',  checked: false },
+    { id: 'pillow',      label: 'Pillow',        checked: false },
+    { id: 'statsmodels', label: 'Statsmodels',   checked: false },
+    { id: 'plotly',      label: 'Plotly',        checked: false },
 ];
 
-// In-memory CSV store — never written to localStorage; gone on page reload
+// Pre-seeded sample dataset — loaded on first DS mode open.
+// Students can delete this and upload their own CSVs.
+const DS_SEED_CSV_NAME = 'students.csv';
+const DS_SEED_CSV_CONTENT = [
+    'name,age,grade,score,study_hours,city',
+    'Alice,20,A,92.5,6.5,New York',
+    'Bob,22,B,78.3,4.0,Chicago',
+    'Charlie,21,A,88.0,5.5,Los Angeles',
+    'Diana,23,C,65.7,2.5,Houston',
+    'Eve,20,B,81.2,4.8,Phoenix',
+    'Frank,24,A,94.1,7.0,Philadelphia',
+    'Grace,22,B,76.8,3.5,San Antonio',
+    'Hank,21,C,62.3,2.0,San Diego',
+    'Iris,20,A,89.4,6.0,Dallas',
+    'Jake,23,B,74.5,3.8,San Jose',
+    'Karen,21,A,91.0,6.8,Austin',
+    'Leo,22,C,58.9,1.5,Jacksonville',
+    'Mia,20,B,83.7,5.0,Fort Worth',
+    'Nick,24,A,96.2,7.5,Columbus',
+    'Olivia,21,B,77.4,4.2,Charlotte',
+].join('\n');
+
+// In-memory CSV store — never written to localStorage; cleared on page reload.
+// Seeded with DS_SEED_CSV_CONTENT; user may delete and re-upload freely.
 let dsFiles       = {};
 let dsRunning     = false;
 let dsActiveWs    = null;
 let dsKilled      = false;
 let dsEditor      = null;
 let dsProvisioned = false;
+let dsSeedLoaded  = false;  // gate so seed only injects once per page load
+
+function dsEnsureSeed() {
+    if (dsSeedLoaded) return;
+    dsSeedLoaded = true;
+    dsFiles[DS_SEED_CSV_NAME] = {
+        name:     DS_SEED_CSV_NAME,
+        content:  DS_SEED_CSV_CONTENT,
+        encoding: 'utf8',
+    };
+    dsRenderCsvList();
+}
 
 function dsRenderLibGrid() {
     const grid = document.getElementById('ds-lib-grid');
@@ -2183,10 +2221,7 @@ function dsRenderLibGrid() {
     DS_LIBS.forEach(lib => {
         const row = document.createElement('label');
         row.className = 'ds-lib-row';
-        row.innerHTML = `
-            <input type="checkbox" id="ds-lib-${lib.id}"${lib.checked ? ' checked' : ''}>
-            <span class="ds-lib-label">${lib.label}</span>
-        `;
+        row.innerHTML = `<input type="checkbox" id="ds-lib-${lib.id}"${lib.checked ? ' checked' : ''}><span class="ds-lib-label">${lib.label}</span>`;
         grid.appendChild(row);
     });
 }
@@ -2198,8 +2233,9 @@ function dsGetSelectedLibs() {
     });
 }
 
+// Strip CSI / SGR ANSI escape sequences (colours, cursor movement, etc.)
 function dsStripAnsi(s) {
-    return s.replace(/\x1b\[[0-9;]*[mGKHFJA-Za-z]/g, '');
+    return s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
 }
 
 function dsClearTerminal() {
@@ -2207,10 +2243,11 @@ function dsClearTerminal() {
     if (el) el.textContent = '';
 }
 
+// insertAdjacentText is O(1) — avoids O(n) string concat on every data chunk
 function dsWriteTerminal(text) {
     const el = document.getElementById('ds-term-pre');
     if (!el) return;
-    el.textContent += dsStripAnsi(text);
+    el.insertAdjacentText('beforeend', dsStripAnsi(text));
     el.scrollTop = el.scrollHeight;
 }
 
@@ -2238,6 +2275,7 @@ function dsSetRunning(running) {
 function dsRenderOutputPanel(files) {
     const pane = document.getElementById('ds-output-pane');
     if (!pane) return;
+    // Remove the placeholder on first image
     const empty = pane.querySelector('.ds-output-empty');
     if (empty) empty.remove();
 
@@ -2255,9 +2293,9 @@ function dsRenderOutputPanel(files) {
 
         const img = document.createElement('img');
         img.className = 'ds-output-img';
-        const mime = /\.svg$/i.test(f.name) ? 'image/svg+xml'
-                   : /\.gif$/i.test(f.name) ? 'image/gif'
-                   : /\.jpe?g$/i.test(f.name) ? 'image/jpeg'
+        const mime = /\.svg$/i.test(f.name)  ? 'image/svg+xml'
+                   : /\.gif$/i.test(f.name)  ? 'image/gif'
+                   : /\.jpe?g$/i.test(f.name)? 'image/jpeg'
                    : 'image/png';
         img.src = `data:${mime};base64,${f.content}`;
         img.alt = f.name;
@@ -2289,18 +2327,15 @@ function dsRenderCsvList() {
     list.innerHTML = '';
     const keys = Object.keys(dsFiles);
     if (keys.length === 0) {
-        list.innerHTML = '<span class="ds-csv-empty">No CSV files uploaded</span>';
+        list.innerHTML = '<span class="ds-csv-empty">No CSV files — upload one or re-open the tab to restore the sample</span>';
         return;
     }
     keys.forEach(name => {
         const safe = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const isSeeded = name === DS_SEED_CSV_NAME;
         const row = document.createElement('div');
         row.className = 'ds-csv-row';
-        row.innerHTML = `
-            <span class="ds-csv-icon">📄</span>
-            <span class="ds-csv-name" title="${safe}">${safe}</span>
-            <button class="ds-csv-rm" title="Remove">✕</button>
-        `;
+        row.innerHTML = `<span class="ds-csv-icon">📄</span><span class="ds-csv-name" title="${safe}">${safe}${isSeeded ? ' <em style="font-size:10px;opacity:.55">(sample)</em>' : ''}</span><button class="ds-csv-rm" title="Remove">✕</button>`;
         row.querySelector('.ds-csv-rm').addEventListener('click', () => {
             delete dsFiles[name];
             dsRenderCsvList();
@@ -2339,17 +2374,34 @@ function dsGetStarterCode(libs) {
 
     const csvNames = Object.keys(dsFiles);
     if (csvNames.length > 0 && libs.includes('pandas')) {
-        lines.push(`df = pd.read_csv('${csvNames[0]}')`);
+        // Escape single quotes so the generated Python is syntactically valid
+        const safeCsvName = csvNames[0].replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        lines.push(`df = pd.read_csv('${safeCsvName}')`);
         lines.push('print(df.head())');
+        lines.push('print(f"Shape: {df.shape}")');
         lines.push('');
     }
 
     if (libs.includes('matplotlib')) {
-        lines.push('fig, ax = plt.subplots(figsize=(8, 5))');
-        lines.push("ax.plot([1, 2, 3, 4], [1, 4, 9, 16], marker='o')");
-        lines.push("ax.set_title('Sample Plot')");
-        lines.push("fig.savefig('plot.png', dpi=100, bbox_inches='tight')");
-        lines.push("print('Saved plot.png')");
+        if (libs.includes('pandas') && csvNames.length > 0) {
+            // Plot from the loaded CSV if numeric columns exist
+            lines.push('# Plot the first two numeric columns');
+            lines.push('num_cols = df.select_dtypes(include="number").columns.tolist()');
+            lines.push('if len(num_cols) >= 2:');
+            lines.push('    fig, ax = plt.subplots(figsize=(8, 5))');
+            lines.push(`    ax.scatter(df[num_cols[0]], df[num_cols[1]], alpha=0.7)`);
+            lines.push('    ax.set_xlabel(num_cols[0])');
+            lines.push('    ax.set_ylabel(num_cols[1])');
+            lines.push("    ax.set_title('Scatter Plot')");
+            lines.push("    fig.savefig('scatter.png', dpi=100, bbox_inches='tight')");
+            lines.push("    print('Saved scatter.png')");
+        } else {
+            lines.push('fig, ax = plt.subplots(figsize=(8, 5))');
+            lines.push("ax.plot([1, 2, 3, 4], [1, 4, 9, 16], marker='o')");
+            lines.push("ax.set_title('Sample Plot')");
+            lines.push("fig.savefig('plot.png', dpi=100, bbox_inches='tight')");
+            lines.push("print('Saved plot.png')");
+        }
     }
 
     return lines.join('\n');
@@ -2367,24 +2419,25 @@ function dsProvision() {
     const hint = document.getElementById('ds-provision-hint');
     if (hint) hint.style.display = 'none';
 
+    // Monaco is already loaded by the main IDE editor at page load.
+    // Call monaco.editor.create() directly — no require() wrapper needed,
+    // and no risk of double-create from a double-click on the button.
     if (!dsEditor) {
-        require(['vs/editor/editor.main'], function() {
-            dsEditor = monaco.editor.create(document.getElementById('ds-editor'), {
-                value: code,
-                language: 'python',
-                theme: 'vs-dark',
-                fontSize: 13,
-                fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--mono'),
-                minimap: { enabled: false },
-                scrollBeyondLastLine: false,
-                lineNumbers: 'on',
-                automaticLayout: true,
-                tabSize: 4,
-                insertSpaces: true,
-                cursorSmoothCaretAnimation: 'on',
-            });
-            dsEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, dsRunCode);
+        dsEditor = monaco.editor.create(document.getElementById('ds-editor'), {
+            value:                    code,
+            language:                 'python',
+            theme:                    'vs-dark',
+            fontSize:                 13,
+            fontFamily:               getComputedStyle(document.documentElement).getPropertyValue('--mono'),
+            minimap:                  { enabled: false },
+            scrollBeyondLastLine:     false,
+            lineNumbers:              'on',
+            automaticLayout:          true,
+            tabSize:                  4,
+            insertSpaces:             true,
+            cursorSmoothCaretAnimation: 'on',
         });
+        dsEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, dsRunCode);
     } else {
         dsEditor.setValue(code);
     }
@@ -2394,13 +2447,14 @@ function dsProvision() {
     setStatus('Python DS', `Ready — ${libs.join(', ')}`, 'default');
 }
 
-async function dsRunCode() {
+function dsRunCode() {
     if (dsRunning || !dsEditor || !dsProvisioned) return;
 
     const rt = runtimesByLang[DS_RUNTIME];
     if (!rt) {
         dsShowTab('terminal');
-        dsWriteTerminal('[Error] python-datascience runtime not installed on this server.\nAsk your admin to build and install the package.\n');
+        dsClearTerminal();
+        dsWriteTerminal('[Error] python-datascience runtime not installed.\nAsk your admin to build and install the package.\n');
         setStatus('Python DS', 'Runtime missing', 'error');
         return;
     }
@@ -2416,7 +2470,15 @@ async function dsRunCode() {
     setStatus('Python DS', 'Running...', 'running');
 
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${wsProto}//${location.host}/api/v2/connect`);
+    let ws;
+    try {
+        ws = new WebSocket(`${wsProto}//${location.host}/api/v2/connect`);
+    } catch (err) {
+        dsSetRunning(false);
+        dsWriteTerminal(`\n[Failed to connect: ${err.message}]\n`);
+        setStatus('Python DS', 'Connection error', 'error');
+        return;
+    }
     dsActiveWs = ws;
 
     let runStats = null;
@@ -2430,6 +2492,7 @@ async function dsRunCode() {
                 { name: 'main.py', content: code },
                 ...csvList.map(f => ({ name: f.name, content: f.content, encoding: f.encoding || 'utf8' })),
             ],
+            // List CSVs as workspace_files so job.js excludes them from compile args
             workspace_files: csvList.map(f => f.name),
             args:            [],
             stdin:           '',
@@ -2454,7 +2517,10 @@ async function dsRunCode() {
                 break;
             case 'output_files':
                 if (msg.files && msg.files.length) {
-                    feMergeFiles(msg.files, DS_RUNTIME);
+                    // Render images in the DS Output panel.
+                    // We intentionally do NOT call feMergeFiles here — that
+                    // would write potentially large base64 images to localStorage
+                    // on every run, risking quota exhaustion.
                     dsRenderOutputPanel(msg.files);
                 }
                 break;

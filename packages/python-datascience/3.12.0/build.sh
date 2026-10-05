@@ -1,6 +1,6 @@
 #!/bin/bash
-# Builds Python 3.12 with the full data-science / AI-ML library stack.
-# The package directory becomes the install prefix (self-contained, no system Python used).
+# Builds Python 3.12 with the full AI/ML/DS library stack.
+# The package directory becomes the install prefix (self-contained).
 
 set -euo pipefail
 
@@ -16,7 +16,6 @@ rm python.tar.gz
 ./configure \
     --prefix "$PREFIX" \
     --with-ensurepip=install \
-    --enable-optimizations \
     2>&1 | tail -5
 
 make -j"$(nproc)"
@@ -25,7 +24,7 @@ make install -j"$(nproc)"
 cd ..
 rm -rf build
 
-# Core data-science stack
+# Core data-science / AI-ML stack
 "$PREFIX/bin/pip3" install --no-cache-dir \
     numpy \
     scipy \
@@ -39,7 +38,7 @@ rm -rf build
     openpyxl \
     xlrd
 
-# Shared utilities that the base python package also provides
+# Shared utilities present in the base python package
 "$PREFIX/bin/pip3" install --no-cache-dir \
     pycryptodome \
     whoosh \
@@ -50,3 +49,7 @@ rm -rf build
     base58 \
     cryptography \
     PyNaCl
+
+# Ensure run and environment scripts are executable when packed into the tarball.
+# The Makefile only chmod's build.sh; we handle the rest here.
+chmod +x "$PREFIX/run" "$PREFIX/environment" 2>/dev/null || true
