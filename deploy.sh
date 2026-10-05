@@ -363,10 +363,17 @@ build_datascience_runtime() {
     echo -e "${CYAN}${BOLD}🧪  Checking AI/ML data-science runtime...${NC}"
 
     # Skip rebuild if pkg-info.json exists (written only after a successful build).
-    # Also ensure .ppman-installed is present — index.js requires it to load the package.
     if docker exec piston_api1 test -f "${DS_PKG_DIR}/pkg-info.json" 2>/dev/null; then
-        docker exec piston_api1 touch "${DS_PKG_DIR}/.ppman-installed" 2>/dev/null || true
-        step "python-datascience ${DS_PKG_VERSION} already installed — skipping build."
+        # index.js filters packages by .ppman-installed at startup. If it's missing
+        # (e.g., older deploy), touch it and restart so the runtime is actually loaded.
+        if ! docker exec piston_api1 test -f "${DS_PKG_DIR}/.ppman-installed" 2>/dev/null; then
+            docker exec piston_api1 touch "${DS_PKG_DIR}/.ppman-installed"
+            step "python-datascience ${DS_PKG_VERSION}: install marker repaired — restarting API..."
+            $DC restart api1 api2 api3 2>/dev/null || true
+            wait_for_api
+        else
+            step "python-datascience ${DS_PKG_VERSION} already installed — skipping build."
+        fi
         return 0
     fi
 
