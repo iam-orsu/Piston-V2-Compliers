@@ -2275,13 +2275,15 @@ function dsSetRunning(running) {
 function dsRenderOutputPanel(files) {
     const pane = document.getElementById('ds-output-pane');
     if (!pane) return;
-    // Remove the placeholder on first image
-    const empty = pane.querySelector('.ds-output-empty');
-    if (empty) empty.remove();
 
     const imageExts = /\.(png|jpg|jpeg|gif|svg|webp)$/i;
     const imageFiles = files.filter(f => imageExts.test(f.name));
+    // Nothing to render — keep placeholder visible
     if (imageFiles.length === 0) return;
+
+    // Remove placeholder only after we know there are images to show
+    const empty = pane.querySelector('.ds-output-empty');
+    if (empty) empty.remove();
 
     imageFiles.forEach(f => {
         const wrapper = document.createElement('div');
@@ -2297,7 +2299,11 @@ function dsRenderOutputPanel(files) {
                    : /\.gif$/i.test(f.name)  ? 'image/gif'
                    : /\.jpe?g$/i.test(f.name)? 'image/jpeg'
                    : 'image/png';
-        img.src = `data:${mime};base64,${f.content}`;
+        // Piston returns binary files as base64 and text files (including SVG) as utf8.
+        // Build the data URI accordingly so SVGs render correctly.
+        img.src = (f.encoding === 'base64')
+            ? `data:${mime};base64,${f.content}`
+            : `data:${mime};charset=utf-8,${encodeURIComponent(f.content)}`;
         img.alt = f.name;
 
         const dl = document.createElement('a');

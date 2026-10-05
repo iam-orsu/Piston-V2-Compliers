@@ -490,7 +490,7 @@ cmd_start() {
     if wait_for_api; then
         auto_install_runtimes
         patch_runtimes
-        build_datascience_runtime
+        build_datascience_runtime || warn "AI/ML runtime build did not complete — run ./deploy.sh restart to retry"
     fi
 
     print_ready_banner
@@ -565,7 +565,7 @@ cmd_restart() {
     if wait_for_api; then
         auto_install_runtimes
         patch_runtimes
-        build_datascience_runtime
+        build_datascience_runtime || warn "AI/ML runtime build did not complete — run ./deploy.sh restart to retry"
     fi
     print_ready_banner
 }
