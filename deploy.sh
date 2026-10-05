@@ -53,7 +53,7 @@ DEFAULT_RUNTIMES=(
 
 # Custom AI/ML package compiled from source inside the container.
 # NOT in the remote registry — handled by build_datascience_runtime().
-DS_PKG_VERSION="3.12.0"
+DS_PKG_VERSION="3.12.7"
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 log()  { echo -e "${GREEN}▶  ${NC}$*"; }
@@ -378,29 +378,16 @@ build_datascience_runtime() {
     echo -e "   ${YELLOW}${BOLD}python-datascience ${DS_PKG_VERSION} is not installed.${NC}"
     echo -e "   ${CYAN}Bundles: NumPy · Pandas · Matplotlib · Seaborn · scikit-learn · SciPy · Pillow · Statsmodels · Plotly${NC}"
     echo ""
-    echo -e "   ${YELLOW}⏱  Building Python 3.12 from source — one-time setup, expect 20-35 minutes.${NC}"
+    echo -e "   ${YELLOW}⏱  Installing Python 3.12 (pre-built) — one-time setup, expect 5-8 minutes.${NC}"
     echo ""
 
-    # ── Step 1: Install build toolchain inside the container ─────────────────
-    # These packages are installed into the container's writable layer.
-    # They are only needed during this initial build; the compiled Python
-    # installation is stored in the packages volume and persists across restarts.
-    step "Installing Python 3.12 build dependencies in container..."
+    # ── Step 1: Ensure curl is available in the container ────────────────────
+    # build.sh downloads a pre-built Python binary (no compilation needed).
+    step "Ensuring curl is available in container..."
     docker exec piston_api1 bash -c "
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update -qq 2>&1 | tail -2
-        apt-get install -y --no-install-recommends \
-            curl \
-            zlib1g-dev \
-            libssl-dev \
-            libffi-dev \
-            libbz2-dev \
-            liblzma-dev \
-            libsqlite3-dev \
-            pkg-config \
-        2>&1 | tail -5
-    " || { warn "Failed to install build deps — check apt sources inside container"; return 1; }
-    step "Build dependencies ready."
+        command -v curl >/dev/null 2>&1 || (export DEBIAN_FRONTEND=noninteractive && apt-get update -qq && apt-get install -y --no-install-recommends curl 2>&1 | tail -3)
+    " || { warn "Failed to install curl — check apt sources inside container"; return 1; }
+    step "curl ready."
 
     # ── Step 2: Copy package source into the container volume ────────────────
     step "Copying package source files..."
@@ -427,7 +414,7 @@ build_datascience_runtime() {
 
     # ── Step 3: Compile Python and install DS library stack ──────────────────
     echo ""
-    echo -e "   ${CYAN}▶  Running build.sh — compiling Python 3.12 and pip-installing DS stack...${NC}"
+    echo -e "   ${CYAN}▶  Running build.sh — downloading Python 3.12 pre-built binary and pip-installing DS stack...${NC}"
     echo ""
 
     if docker exec piston_api1 bash -c "cd '${DS_PKG_DIR}' && bash ./build.sh"; then
@@ -667,8 +654,8 @@ cmd_help() {
     echo -e "  ${CYAN}patch${NC}               Re-apply runtime script patches (e.g. Java multi-file)"
     echo ""
     echo -e "${BOLD}AI/ML / Data Science runtime:${NC}"
-    echo -e "  python-datascience is compiled from source on first start/restart."
-    echo -e "  One-time build — 20-35 min. Subsequent restarts skip it (already built)."
+    echo -e "  python-datascience is installed automatically on first start/restart."
+    echo -e "  One-time install — ~5-8 min (pre-built binary, no compilation). Subsequent restarts skip it."
     echo -e "  Libraries: NumPy · Pandas · Matplotlib · Seaborn · scikit-learn · SciPy · Pillow · Statsmodels · Plotly"
     echo ""
     echo -e "${BOLD}Examples:${NC}"

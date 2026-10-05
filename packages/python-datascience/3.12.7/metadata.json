@@ -1,6 +1,6 @@
 {
     "language": "python-datascience",
-    "version": "3.12.0",
+    "version": "3.12.7",
     "aliases": ["python-ds", "py-ds", "pyds"],
     "limit_overrides": {
         "run_memory_limit": 1073741824,
