@@ -362,8 +362,8 @@ build_datascience_runtime() {
     echo ""
     echo -e "${CYAN}${BOLD}🧪  Checking AI/ML data-science runtime...${NC}"
 
-    # Skip if pkg-info.json exists (created only after a successful build)
-    if docker exec piston_api1 test -f "${DS_PKG_DIR}/pkg-info.json" 2>/dev/null; then
+    # Skip if .ppman-installed exists (created only after a successful build)
+    if docker exec piston_api1 test -f "${DS_PKG_DIR}/.ppman-installed" 2>/dev/null; then
         step "python-datascience ${DS_PKG_VERSION} already installed — skipping build."
         return 0
     fi
@@ -437,6 +437,10 @@ meta.build_platform = 'docker-debian';
 fs.writeFileSync('${DS_PKG_DIR}/pkg-info.json', JSON.stringify(meta, null, 2));
 process.stdout.write('pkg-info.json written\n');
 " || { warn "Failed to write pkg-info.json — check node is available in container"; return 1; }
+
+    # Mark package as installed — index.js filters by this file at startup
+    docker exec piston_api1 touch "${DS_PKG_DIR}/.ppman-installed" \
+        || { warn "Failed to create .ppman-installed"; return 1; }
 
     # ── Step 5: Restart API replicas so they pick up the new runtime ─────────
     echo ""
@@ -578,7 +582,7 @@ cmd_status() {
     echo ""
 
     local ds_dir="/piston/packages/python-datascience/${DS_PKG_VERSION}"
-    if docker exec piston_api1 test -f "${ds_dir}/pkg-info.json" 2>/dev/null; then
+    if docker exec piston_api1 test -f "${ds_dir}/.ppman-installed" 2>/dev/null; then
         echo -e "   ${GREEN}✅  AI/ML runtime: python-datascience ${DS_PKG_VERSION} installed${NC}"
     else
         echo -e "   ${YELLOW}⚠  AI/ML runtime: python-datascience not yet built${NC}"
