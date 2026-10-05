@@ -783,7 +783,7 @@ The `python-datascience` runtime is a custom Python 3.12 build with a pre-instal
 |---|---|
 | Language identifier | `python-datascience` |
 | Aliases | `python-ds`, `py-ds`, `pyds` |
-| Version | `3.12.0` |
+| Version | `3.12.7` |
 | Run memory limit | 1 GB |
 | Run timeout | 30 s |
 | Compile stage | none (interpreted) |
@@ -981,15 +981,15 @@ DS jobs have higher limits than the default to accommodate model training and la
 | Compile memory | 512 MB | unlimited |
 | Max output file | 1 MB | **64 MB** |
 
-These overrides are declared in `packages/python-datascience/3.12.0/metadata.json` and applied automatically — no per-request fields needed.
+These overrides are declared in `packages/python-datascience/3.12.7/metadata.json` and applied automatically — no per-request fields needed.
 
 ### Deployment — automatic build on `./deploy.sh restart`
 
-The `python-datascience` runtime is not in the remote package registry. `deploy.sh` compiles it from source inside the running API container on first start or restart:
+The `python-datascience` runtime is not in the remote package registry. `deploy.sh` installs it automatically inside the running API container on first deploy, using a pre-built Python binary (no compilation required):
 
 ```bash
-./deploy.sh restart   # builds python-datascience on first run (one-time, 20-35 min)
-                      # subsequent restarts detect pkg-info.json and skip the build
+./deploy.sh restart   # installs python-datascience on first run (one-time, ~5-8 min)
+                      # subsequent restarts detect the install marker and skip the build
 ```
 
 Build status:
