@@ -38,6 +38,7 @@ fi
 # Format: language=version  (used by auto_install_runtimes and install_runtime)
 DEFAULT_RUNTIMES=(
     "python=3.12.0"
+    "python=3.10.0"
     "node=20.11.1"
     "typescript=5.0.3"
     "java=15.0.2"
