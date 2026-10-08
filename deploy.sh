@@ -193,11 +193,20 @@ install_runtime() {
     local lang="$1"
     local ver="${2:-}"
 
-    # Skip if already installed
-    if curl -sf http://localhost/api/v2/runtimes 2>/dev/null \
-            | grep -q "\"language\":\"${lang}\""; then
-        step "$lang already installed — skipping."
-        return 0
+    # Skip if already installed — check version too when one is specified
+    local runtimes_json
+    runtimes_json=$(curl -sf http://localhost/api/v2/runtimes 2>/dev/null || echo "[]")
+    if [[ -n "$ver" ]]; then
+        if echo "$runtimes_json" | grep -q "\"language\":\"${lang}\"" \
+           && echo "$runtimes_json" | grep -q "\"version\":\"${ver}\""; then
+            step "$lang=$ver already installed — skipping."
+            return 0
+        fi
+    else
+        if echo "$runtimes_json" | grep -q "\"language\":\"${lang}\""; then
+            step "$lang already installed — skipping."
+            return 0
+        fi
     fi
 
     # If no version given, look up the latest from the remote package index.
