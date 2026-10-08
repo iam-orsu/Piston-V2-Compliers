@@ -627,7 +627,11 @@ cmd_install() {
     [[ -z "$lang" ]] && err "Usage: ./deploy.sh install <language> [version]  (e.g. python, java=15.0.2)"
     check_docker
     wait_for_api
-    install_runtime "$lang" "$ver"
+    if install_runtime "$lang" "$ver"; then
+        echo -e "${CYAN}  Restarting API replicas to load new runtime...${NC}"
+        $DC restart api1 api2 api3 2>/dev/null || true
+        wait_for_api || true
+    fi
     echo -e "${GREEN}✅  Done! Refresh the IDE to see ${lang} in the dropdown.${NC}"
 }
 
