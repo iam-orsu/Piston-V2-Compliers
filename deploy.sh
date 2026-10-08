@@ -707,7 +707,7 @@ case "${1:-help}" in
     restart)  cmd_restart ;;
     status)   cmd_status ;;
     logs)     cmd_logs "${2:-}" ;;
-    install)  cmd_install "${2:-}" ;;
+    install)  cmd_install "${2:-}" "${3:-}" ;;
     patch)    cmd_patch ;;
     list)     cmd_list ;;
     runtimes) cmd_runtimes ;;
