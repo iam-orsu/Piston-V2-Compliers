@@ -134,8 +134,20 @@ function get_job(body) {
                     });
                 }
                 if (constraint_value < 0) {
+                    // -1 is the original piston "no limit" sentinel for memory.
+                    // Allow it through so callers can opt out of the server cap.
+                    if (constraint === 'memory_limit' && constraint_value === -1) {
+                        continue;
+                    }
                     return reject({
-                        message: `${constraint_name} must be non-negative`,
+                        message: `${constraint_name} must be non-negative or -1 (no limit)`,
+                    });
+                }
+                // Memory limits below 4 MB will OOM-kill any real language runtime.
+                // Catch the "I meant MB not bytes" mistake with a clear error.
+                if (constraint === 'memory_limit' && constraint_value < 4 * 1024 * 1024) {
+                    return reject({
+                        message: `${constraint_name} must be at least 4194304 bytes (4 MB) or -1 for no limit — value is in bytes, not MB`,
                     });
                 }
             }
