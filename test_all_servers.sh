@@ -66,6 +66,8 @@ TESTS=(
 "Bash 5.2|14|{\"language\":\"bash\",\"version\":\"5.2.0\",\"files\":[{\"name\":\"main.sh\",\"content\":\"read x; echo \$((x*2))\"}],\"stdin\":\"7\",\"compile_memory_limit\":-1,\"run_memory_limit\":-1}"
 
 "SQLite3 3.36|42|{\"language\":\"sqlite3\",\"version\":\"3.36.0\",\"files\":[{\"name\":\"db.sql\",\"content\":\"CREATE TABLE t(x INT);\nINSERT INTO t VALUES(42);\nSELECT x FROM t;\"}],\"stdin\":\"\"}"
+
+"Python DS (NumPy)|3.0|{\"language\":\"python-datascience\",\"version\":\"3.12.7\",\"files\":[{\"name\":\"main.py\",\"content\":\"import numpy as np\narr=np.array([1,2,3,4,5])\nprint(arr.mean())\"}],\"stdin\":\"\",\"run_memory_limit\":-1}"
 )
 
 # ── Run ───────────────────────────────────────────────────────────────────────
