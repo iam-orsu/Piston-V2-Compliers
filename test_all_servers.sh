@@ -67,7 +67,23 @@ TESTS=(
 
 "SQLite3 3.36|42|{\"language\":\"sqlite3\",\"version\":\"3.36.0\",\"files\":[{\"name\":\"db.sql\",\"content\":\"CREATE TABLE t(x INT);\nINSERT INTO t VALUES(42);\nSELECT x FROM t;\"}],\"stdin\":\"\"}"
 
-"Python DS (NumPy)|3.0|{\"language\":\"python-datascience\",\"version\":\"3.12.7\",\"files\":[{\"name\":\"main.py\",\"content\":\"import numpy as np\narr=np.array([1,2,3,4,5])\nprint(arr.mean())\"}],\"stdin\":\"\",\"run_memory_limit\":-1}"
+"Python DS / NumPy|3.0|{\"language\":\"python-datascience\",\"version\":\"3.12.7\",\"files\":[{\"name\":\"main.py\",\"content\":\"import numpy as np\nprint(np.array([1,2,3,4,5]).mean())\"}],\"stdin\":\"\",\"run_memory_limit\":-1}"
+
+"Python DS / Pandas|6|{\"language\":\"python-datascience\",\"version\":\"3.12.7\",\"files\":[{\"name\":\"main.py\",\"content\":\"import pandas as pd\nprint(pd.Series([1,2,3]).sum())\"}],\"stdin\":\"\",\"run_memory_limit\":-1}"
+
+"Python DS / Matplotlib|saved|{\"language\":\"python-datascience\",\"version\":\"3.12.7\",\"files\":[{\"name\":\"main.py\",\"content\":\"import matplotlib.pyplot as plt\nimport numpy as np\nplt.plot(np.linspace(0,1,5))\nplt.savefig('plot.png')\nprint('saved')\"}],\"stdin\":\"\",\"run_memory_limit\":-1}"
+
+"Python DS / Seaborn|ok|{\"language\":\"python-datascience\",\"version\":\"3.12.7\",\"files\":[{\"name\":\"main.py\",\"content\":\"import seaborn as sns\nprint('ok')\"}],\"stdin\":\"\",\"run_memory_limit\":-1}"
+
+"Python DS / scikit-learn|1.0|{\"language\":\"python-datascience\",\"version\":\"3.12.7\",\"files\":[{\"name\":\"main.py\",\"content\":\"from sklearn.metrics import accuracy_score\nprint(accuracy_score([1,0,1],[1,0,1]))\"}],\"stdin\":\"\",\"run_memory_limit\":-1}"
+
+"Python DS / SciPy|0.0|{\"language\":\"python-datascience\",\"version\":\"3.12.7\",\"files\":[{\"name\":\"main.py\",\"content\":\"from scipy.stats import norm\nprint(norm.mean())\"}],\"stdin\":\"\",\"run_memory_limit\":-1}"
+
+"Python DS / Pillow|ok|{\"language\":\"python-datascience\",\"version\":\"3.12.7\",\"files\":[{\"name\":\"main.py\",\"content\":\"from PIL import Image\nimg=Image.new('RGB',(10,10))\nimg.save('img.png')\nprint('ok')\"}],\"stdin\":\"\",\"run_memory_limit\":-1}"
+
+"Python DS / Statsmodels|ok|{\"language\":\"python-datascience\",\"version\":\"3.12.7\",\"files\":[{\"name\":\"main.py\",\"content\":\"import statsmodels.api as sm\nprint('ok')\"}],\"stdin\":\"\",\"run_memory_limit\":-1}"
+
+"Python DS / Plotly|ok|{\"language\":\"python-datascience\",\"version\":\"3.12.7\",\"files\":[{\"name\":\"main.py\",\"content\":\"import plotly.graph_objects as go\nfig=go.Figure(go.Scatter(x=[1,2,3],y=[4,5,6]))\nprint('ok')\"}],\"stdin\":\"\",\"run_memory_limit\":-1}"
 )
 
 # ── Run ───────────────────────────────────────────────────────────────────────
