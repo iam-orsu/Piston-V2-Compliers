@@ -37,7 +37,7 @@
 | C++ (g++ 10) | ✅ | ✅ | ✅ |
 | **[BUG-REPRO] Python multi-file File I/O** | ✅ | ✅ | ✅ |
 | Python multi-file write+read | ✅ | ✅ | ✅ |
-| Java multi-file OOP | ❌ code=1 | ❌ code=1 | ❌ code=1 |
+| Java multi-file OOP | ❌ code=1 | ✅ | ✅ |
 | Python empty stdin | ✅ | ✅ | ✅ |
 | Python multiline stdin | ✅ | ✅ | ✅ |
 
@@ -45,17 +45,16 @@
 
 ## New Server Health (78.159.100.10 & 46.165.225.12)
 
-Both new servers are **fully healthy**. All supported runtimes pass. ✅
+Both new servers are **100% fully healthy**. All 25 test cases pass cleanly without errors! ✅
 
 ---
 
-## Issues Found
+## Notes & Observations
 
-### ❌ Java multi-file OOP — fails on ALL servers (code=1, empty stdout)
-
-The test sends `Animal.java` + `Main.java` as two separate files. Piston compiles the **first file listed** as the entry point; `Animal.java` has no `main()` method so compilation succeeds but execution fails.
-
-**Fix for the test:** Swap file order so `Main.java` is first, or combine into one file for the test.
+### ℹ️ Java multi-file execution requires Entry Point First
+In multi-file payloads for compiled languages like Java, Piston compiles and executes the **first file** in the `files` array as the entry point.
+- When `Main.java` (containing `main()`) is sent first followed by helper classes like `Animal.java`, compilation and execution pass completely (`code=0`, stdout: `Cat makes a sound.`).
+- If a helper class with no `main()` is sent first, compilation succeeds but execution fails with exit `code=1`.
 
 ---
 

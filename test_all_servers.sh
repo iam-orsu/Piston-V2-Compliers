@@ -91,7 +91,7 @@ TESTS=(
 
 "Python multi-file write+read|piston rocks|{\"language\":\"python\",\"version\":\"3.12.0\",\"files\":[{\"name\":\"main.py\",\"content\":\"with open('msg.txt','w') as f:\n    f.write('piston rocks')\nwith open('msg.txt','r') as f:\n    print(f.read())\"}],\"stdin\":\"\",\"compile_memory_limit\":-1,\"run_memory_limit\":-1}"
 
-"Java multi-file OOP|Cat makes a sound.|{\"language\":\"java\",\"version\":\"15.0.2\",\"files\":[{\"name\":\"Animal.java\",\"content\":\"public class Animal {\n  String name;\n  public Animal(String n){ this.name=n; }\n  public String speak(){ return name+\\\" makes a sound.\\\"; }\n}\"},{\"name\":\"Main.java\",\"content\":\"public class Main {\n  public static void main(String[] a){\n    Animal x=new Animal(\\\"Cat\\\");\n    System.out.println(x.speak());\n  }\n}\"}],\"stdin\":\"\",\"compile_memory_limit\":-1,\"run_memory_limit\":-1}"
+"Java multi-file OOP|Cat makes a sound.|{\"language\":\"java\",\"version\":\"15.0.2\",\"files\":[{\"name\":\"Main.java\",\"content\":\"public class Main {\n  public static void main(String[] a){\n    Animal x=new Animal(\\\"Cat\\\");\n    System.out.println(x.speak());\n  }\n}\"},{\"name\":\"Animal.java\",\"content\":\"public class Animal {\n  String name;\n  public Animal(String n){ this.name=n; }\n  public String speak(){ return name+\\\" makes a sound.\\\"; }\n}\"}],\"stdin\":\"\",\"compile_memory_limit\":-1,\"run_memory_limit\":-1}"
 
 "Python empty stdin|42|{\"language\":\"python\",\"version\":\"3.12.0\",\"files\":[{\"name\":\"main.py\",\"content\":\"print(42)\"}],\"stdin\":\"\",\"compile_memory_limit\":-1,\"run_memory_limit\":-1}"
 
