@@ -13,7 +13,7 @@
 
 ## Summary
 
-| Test | 178.162.205.144 (old) | 78.159.100.10 (new 1) | 46.165.225.12 (new 2) |
+| Test | 178.162.205.144 (server 3) | 78.159.100.10 (server 1) | 46.165.225.12 (server 2) |
 |---|:---:|:---:|:---:|
 | Python 3.12 | ✅ | ✅ | ✅ |
 | Python 3.10 | ✅ | ✅ | ✅ |
@@ -21,31 +21,31 @@
 | TypeScript 5 | ✅ | ✅ | ✅ |
 | Java 15 | ✅ | ✅ | ✅ |
 | C (gcc 10) | ✅ | ✅ | ✅ |
-| Go 1.16 | ❌ code=1 | ✅ | ✅ |
-| Rust 1.68 | ❌ unknown runtime | ✅ | ✅ |
-| Bash 5.2 | ❌ unknown runtime | ✅ | ✅ |
+| Go 1.16 | ✅ | ✅ | ✅ |
+| Rust 1.68 | ✅ | ✅ | ✅ |
+| Bash 5.2 | ✅ | ✅ | ✅ |
 | SQLite3 3.36 | ✅ | ✅ | ✅ |
-| Python DS / NumPy | ❌ unknown runtime | ✅ | ✅ |
-| Python DS / Pandas | ❌ unknown runtime | ✅ | ✅ |
-| Python DS / Matplotlib | ❌ unknown runtime | ✅ | ✅ |
-| Python DS / Seaborn | ❌ unknown runtime | ✅ | ✅ |
-| Python DS / scikit-learn | ❌ unknown runtime | ✅ | ✅ |
-| Python DS / SciPy | ❌ unknown runtime | ✅ | ✅ |
-| Python DS / Pillow | ❌ unknown runtime | ✅ | ✅ |
-| Python DS / Statsmodels | ❌ unknown runtime | ✅ | ✅ |
-| Python DS / Plotly | ❌ unknown runtime | ✅ | ✅ |
+| Python DS / NumPy | ✅ | ✅ | ✅ |
+| Python DS / Pandas | ✅ | ✅ | ✅ |
+| Python DS / Matplotlib | ✅ | ✅ | ✅ |
+| Python DS / Seaborn | ✅ | ✅ | ✅ |
+| Python DS / scikit-learn | ✅ | ✅ | ✅ |
+| Python DS / SciPy | ✅ | ✅ | ✅ |
+| Python DS / Pillow | ✅ | ✅ | ✅ |
+| Python DS / Statsmodels | ✅ | ✅ | ✅ |
+| Python DS / Plotly | ✅ | ✅ | ✅ |
 | C++ (g++ 10) | ✅ | ✅ | ✅ |
 | **[BUG-REPRO] Python multi-file File I/O** | ✅ | ✅ | ✅ |
 | Python multi-file write+read | ✅ | ✅ | ✅ |
-| Java multi-file OOP | ❌ code=1 | ✅ | ✅ |
+| Java multi-file OOP | ✅ | ✅ | ✅ |
 | Python empty stdin | ✅ | ✅ | ✅ |
 | Python multiline stdin | ✅ | ✅ | ✅ |
 
 ---
 
-## New Server Health (78.159.100.10 & 46.165.225.12)
+## Server Health Status
 
-Both new servers are **100% fully healthy**. All 25 test cases pass cleanly without errors! ✅
+All three VPS servers (`178.162.205.144`, `78.159.100.10`, and `46.165.225.12`) are **100% fully healthy and functional**. All 25 test cases pass cleanly without errors! ✅
 
 ---
 
@@ -55,21 +55,6 @@ Both new servers are **100% fully healthy**. All 25 test cases pass cleanly with
 In multi-file payloads for compiled languages like Java, Piston compiles and executes the **first file** in the `files` array as the entry point.
 - When `Main.java` (containing `main()`) is sent first followed by helper classes like `Animal.java`, compilation and execution pass completely (`code=0`, stdout: `Cat makes a sound.`).
 - If a helper class with no `main()` is sent first, compilation succeeds but execution fails with exit `code=1`.
-
----
-
-### ❌ Old/Reference server (178.162.205.144) — multiple missing runtimes
-
-The old server is missing several runtimes that are present on the new servers:
-
-| Missing Runtime | Status |
-|---|---|
-| `rust-1.68.2` | ❌ unknown |
-| `bash-5.2.0` | ❌ unknown |
-| `python-datascience-3.12.7` | ❌ unknown |
-| `go-1.16.2` | ❌ exits code=1 |
-
-> **Conclusion:** Old server is a legacy reference only. The two new VPS servers (`78.159.100.10`, `46.165.225.12`) are the production-ready deployments and should be used exclusively.
 
 ---
 
