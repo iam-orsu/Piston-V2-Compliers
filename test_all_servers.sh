@@ -84,6 +84,18 @@ TESTS=(
 "Python DS / Statsmodels|ok|{\"language\":\"python-datascience\",\"version\":\"3.12.7\",\"files\":[{\"name\":\"main.py\",\"content\":\"import statsmodels.api as sm\nprint('ok')\"}],\"stdin\":\"\",\"run_memory_limit\":-1}"
 
 "Python DS / Plotly|ok|{\"language\":\"python-datascience\",\"version\":\"3.12.7\",\"files\":[{\"name\":\"main.py\",\"content\":\"import plotly.graph_objects as go\nfig=go.Figure(go.Scatter(x=[1,2,3],y=[4,5,6]))\nprint('ok')\"}],\"stdin\":\"\",\"run_memory_limit\":-1}"
+
+"C++ (g++ 10)|14|{\"language\":\"c++\",\"version\":\"10.2.0\",\"files\":[{\"name\":\"main.cpp\",\"content\":\"#include<iostream>\nusing namespace std;\nint main(){int x;cin>>x;cout<<x*2<<endl;}\"}],\"stdin\":\"7\",\"compile_memory_limit\":-1,\"run_memory_limit\":-1}"
+
+"[BUG-REPRO] Python multi-file File I/O|hello from file|{\"language\":\"python\",\"version\":\"3.12.0\",\"files\":[{\"name\":\"main.py\",\"content\":\"with open('data.txt','r') as f:\n    print(f.read().strip())\"},{\"name\":\"data.txt\",\"content\":\"hello from file\"}],\"stdin\":\"\",\"compile_memory_limit\":-1,\"run_memory_limit\":-1}"
+
+"Python multi-file write+read|piston rocks|{\"language\":\"python\",\"version\":\"3.12.0\",\"files\":[{\"name\":\"main.py\",\"content\":\"with open('msg.txt','w') as f:\n    f.write('piston rocks')\nwith open('msg.txt','r') as f:\n    print(f.read())\"}],\"stdin\":\"\",\"compile_memory_limit\":-1,\"run_memory_limit\":-1}"
+
+"Java multi-file OOP|Cat makes a sound.|{\"language\":\"java\",\"version\":\"15.0.2\",\"files\":[{\"name\":\"Animal.java\",\"content\":\"public class Animal {\n  String name;\n  public Animal(String n){ this.name=n; }\n  public String speak(){ return name+\\\" makes a sound.\\\"; }\n}\"},{\"name\":\"Main.java\",\"content\":\"public class Main {\n  public static void main(String[] a){\n    Animal x=new Animal(\\\"Cat\\\");\n    System.out.println(x.speak());\n  }\n}\"}],\"stdin\":\"\",\"compile_memory_limit\":-1,\"run_memory_limit\":-1}"
+
+"Python empty stdin|42|{\"language\":\"python\",\"version\":\"3.12.0\",\"files\":[{\"name\":\"main.py\",\"content\":\"print(42)\"}],\"stdin\":\"\",\"compile_memory_limit\":-1,\"run_memory_limit\":-1}"
+
+"Python multiline stdin|15|{\"language\":\"python\",\"version\":\"3.12.0\",\"files\":[{\"name\":\"main.py\",\"content\":\"import sys\nprint(sum(int(l) for l in sys.stdin.read().split()))\"}],\"stdin\":\"1\n2\n3\n4\n5\",\"compile_memory_limit\":-1,\"run_memory_limit\":-1}"
 )
 
 # ── Run ───────────────────────────────────────────────────────────────────────

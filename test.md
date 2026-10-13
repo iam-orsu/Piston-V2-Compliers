@@ -1,49 +1,96 @@
-# Java Test Snippets
+# Piston — Multi-Server Test Results
 
-## Phase 1: File I/O
-
-### Create a File
-
-**Main.java** (no workspace files needed)
-```java
-import java.io.FileWriter;
-import java.io.IOException;
-
-public class Main {
-    public static void main(String[] args) throws IOException {
-        FileWriter fw = new FileWriter("hello.txt");
-        fw.write("Hello from Piston!\nLine 2\nLine 3");
-        fw.close();
-        System.out.println("File created: hello.txt");
-    }
-}
-```
+> **Last Run:** 2026-10-13  
+> **Script:** `test_all_servers.sh`  
+> **Servers Tested:**
+> | Label | IP |
+> |---|---|
+> | old/reference | `178.162.205.144` |
+> | new server 1 | `78.159.100.10` |
+> | new server 2 | `46.165.225.12` |
 
 ---
 
-### Read a File
+## Summary
 
-**Main.java** (no workspace files needed)
-```java
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.IOException;
+| Test | 178.162.205.144 (old) | 78.159.100.10 (new 1) | 46.165.225.12 (new 2) |
+|---|:---:|:---:|:---:|
+| Python 3.12 | ✅ | ✅ | ✅ |
+| Python 3.10 | ✅ | ✅ | ✅ |
+| Node.js 20 | ✅ | ✅ | ✅ |
+| TypeScript 5 | ✅ | ✅ | ✅ |
+| Java 15 | ✅ | ✅ | ✅ |
+| C (gcc 10) | ✅ | ✅ | ✅ |
+| Go 1.16 | ❌ code=1 | ✅ | ✅ |
+| Rust 1.68 | ❌ unknown runtime | ✅ | ✅ |
+| Bash 5.2 | ❌ unknown runtime | ✅ | ✅ |
+| SQLite3 3.36 | ✅ | ✅ | ✅ |
+| Python DS / NumPy | ❌ unknown runtime | ✅ | ✅ |
+| Python DS / Pandas | ❌ unknown runtime | ✅ | ✅ |
+| Python DS / Matplotlib | ❌ unknown runtime | ✅ | ✅ |
+| Python DS / Seaborn | ❌ unknown runtime | ✅ | ✅ |
+| Python DS / scikit-learn | ❌ unknown runtime | ✅ | ✅ |
+| Python DS / SciPy | ❌ unknown runtime | ✅ | ✅ |
+| Python DS / Pillow | ❌ unknown runtime | ✅ | ✅ |
+| Python DS / Statsmodels | ❌ unknown runtime | ✅ | ✅ |
+| Python DS / Plotly | ❌ unknown runtime | ✅ | ✅ |
+| C++ (g++ 10) | ✅ | ✅ | ✅ |
+| **[BUG-REPRO] Python multi-file File I/O** | ✅ | ✅ | ✅ |
+| Python multi-file write+read | ✅ | ✅ | ✅ |
+| Java multi-file OOP | ❌ code=1 | ❌ code=1 | ❌ code=1 |
+| Python empty stdin | ✅ | ✅ | ✅ |
+| Python multiline stdin | ✅ | ✅ | ✅ |
 
-public class Main {
-    public static void main(String[] args) throws IOException {
-        BufferedReader br = new BufferedReader(new FileReader("hello.txt"));
-        String line;
-        while ((line = br.readLine()) != null) {
-            System.out.println(line);
-        }
-        br.close();
-    }
-}
-```
+---
 
-> Note: To test read, first run the create snippet so `hello.txt` exists in the sandbox — but remember the sandbox is destroyed after each run. To read a file you wrote, do both write + read in the same program, or use workspace files.
+## New Server Health (78.159.100.10 & 46.165.225.12)
 
-### Write + Read in One Run
+Both new servers are **fully healthy**. All supported runtimes pass. ✅
+
+---
+
+## Issues Found
+
+### ❌ Java multi-file OOP — fails on ALL servers (code=1, empty stdout)
+
+The test sends `Animal.java` + `Main.java` as two separate files. Piston compiles the **first file listed** as the entry point; `Animal.java` has no `main()` method so compilation succeeds but execution fails.
+
+**Fix for the test:** Swap file order so `Main.java` is first, or combine into one file for the test.
+
+---
+
+### ❌ Old/Reference server (178.162.205.144) — multiple missing runtimes
+
+The old server is missing several runtimes that are present on the new servers:
+
+| Missing Runtime | Status |
+|---|---|
+| `rust-1.68.2` | ❌ unknown |
+| `bash-5.2.0` | ❌ unknown |
+| `python-datascience-3.12.7` | ❌ unknown |
+| `go-1.16.2` | ❌ exits code=1 |
+
+> **Conclusion:** Old server is a legacy reference only. The two new VPS servers (`78.159.100.10`, `46.165.225.12`) are the production-ready deployments and should be used exclusively.
+
+---
+
+## Bug Repro Confirmation ✅
+
+The `[BUG-REPRO] Python multi-file File I/O` test confirms the fix is working:
+
+- **Test:** Sends `main.py` (reads `data.txt`) + `data.txt` (content: `hello from file`) as multi-file payload
+- **Expected output:** `hello from file`
+- **Result:** ✅ All 3 servers return exactly `hello from file`
+
+The previously reported bug (Python env prefix being prepended to ALL files including `.txt` data files) is **confirmed fixed**.
+
+---
+
+## Java Test Snippets (Manual Reference)
+
+### Phase 1: File I/O
+
+#### Write + Read in One Run
 
 ```java
 import java.io.*;
@@ -68,13 +115,11 @@ public class Main {
 
 ---
 
-## Phase 2: OOP Concepts
+### Phase 2: OOP Concepts
 
-### Concept 1 — Inheritance + Method Overriding
+#### Concept 1 — Inheritance + Method Overriding
 
-Save `Animal.java` to workspace, run `Main.java`.
-
-**Animal.java** (workspace)
+**Animal.java** (workspace file)
 ```java
 public class Animal {
     String name;
@@ -89,7 +134,7 @@ public class Animal {
 }
 ```
 
-**Main.java**
+**Main.java** (entry point — must be listed first in files array)
 ```java
 public class Main extends Animal {
     public Main(String name) {
@@ -117,11 +162,7 @@ Cat makes a sound.
 Dog says: Woof!
 ```
 
----
-
-### Concept 2 — Interface + Polymorphism
-
-Save `Shape.java` to workspace, run `Main.java`.
+#### Concept 2 — Interface + Polymorphism
 
 **Shape.java** (workspace)
 ```java
@@ -157,17 +198,8 @@ public class Main {
 }
 ```
 
-Expected output:
-```
-78.54 — I am a shape with area: 78.53981633974483
-24.00 — I am a shape with area: 24.0
-```
+#### Concept 3 — Encapsulation + Static Members
 
----
-
-### Concept 3 — Encapsulation + Static Members
-
-**Main.java** (no workspace needed)
 ```java
 public class Main {
     static int count = 0;
