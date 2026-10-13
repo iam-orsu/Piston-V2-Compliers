@@ -445,8 +445,8 @@ router.get('/packages', make_limiter(30, 60 * 1000), async (req, res) => {
 });
 
 // Install a package from the remote registry.
-// Rate-limited to 5 installs per minute to prevent abuse.
-router.post('/packages', make_limiter(5, 60 * 1000), async (req, res) => {
+// Rate-limited to 30 installs per minute to allow automated deployment of all default runtimes without throttling.
+router.post('/packages', make_limiter(30, 60 * 1000), async (req, res) => {
     let { language, version } = req.body;
 
     if (!language || typeof language !== 'string') {

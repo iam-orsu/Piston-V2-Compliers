@@ -15,6 +15,9 @@ const logger = Logger.create('index');
 const app = express();
 expressWs(app);
 
+// Trust the front-facing Nginx reverse proxy (1 hop) for accurate client IP resolution in rate limiting
+app.set('trust proxy', 1);
+
 // C1: Global crash handlers — prevent a single error from killing all users' sessions
 process.on('unhandledRejection', (reason) => {
     logger.error('Unhandled Promise Rejection:', reason);
