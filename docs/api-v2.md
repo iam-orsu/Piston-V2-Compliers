@@ -105,6 +105,11 @@ Compiles (if needed) and runs code inside an isolated sandbox. Returns stdout, s
 
 ## Multi-file Projects & OOP
 
+> [!IMPORTANT]
+> **Frontend / API Integration Rule:**  
+> In Piston, for multi-file submissions (Java, C++, etc.), **the entry point (file with `main`) must always be the first file in the `files` array (`files[0]`)**.  
+> If helper classes (e.g. `Animal.java` without a `main` method) are placed first, Piston will attempt to run that file as the entry point and execution will fail with exit code `1`.
+
 Pass all source files in `files[]`. The **first file** is the entry point. No `workspace_files` needed.
 
 Piston's compile stage receives only the files that share the same extension as the entry point (e.g. all `.java` files, all `.c` files). Data files (`.txt`, `.h`, `.csv`, etc.) are written to the sandbox so code can read them but are never passed to the compiler.

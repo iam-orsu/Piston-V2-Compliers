@@ -206,6 +206,11 @@ function sendInput(text) {
 
 ## Multi-file Projects & OOP
 
+> [!IMPORTANT]
+> **API Guide Rule for Frontend / Client Developers:**  
+> In Piston, for multi-file submissions (Java, C++, etc.), **the entry point (file with `main`) must always be the first file in the `files` array (`files[0]`)**.  
+> Helper classes, headers, modules, and data files must come after. If a helper file (such as `Animal.java` without a `main` method) is placed first, Piston will treat it as the entry point and execution will fail with exit code `1`.
+
 Put all source files in `files[]`. The **first file** is the entry point. All other files are compiled or imported automatically.
 
 ### How compilation works
